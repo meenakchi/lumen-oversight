@@ -1,0 +1,147 @@
+// server.js — zero-dependency Node server: the oversight agent as an API, the
+// owner console as a static front end. Port 3000 (sandbox rule).
+'use strict';
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const PUB = path.join(__dirname, 'public');
+const PORT = process.env.PORT || 3000;
+
+const gate = require('./engine/gate');
+const rules = require('./engine/rules');
+const { corpus } = require('./engine/corpus');
+const cl = require('./engine/classify');
+const scenarios = require('./engine/scenarios');
+const briefing = require('./engine/briefing');
+const ledger = require('./engine/ledger');
+const { seedNight } = require('./engine/seed');
+const { AGENTS, KIT_SCRIPTS, ROUTINE, OURS } = require('./engine/day');
+
+const { policyRaw, taxonomy, LABEL } = rules;
+cl.setCorpus(corpus());
+const c = corpus();
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png', '.ico': 'image/x-icon' };
+
+const fileIndex = c.files.map((f) => {
+  const r = cl.classifyFile(f);
+  return { path: f.path, title: f.title, level: r.level, declared: f.fm.sensitivity || null, declaredMatch: r.declaredMatches, drivers: r.drivers.map((d) => ({ id: d.id, why: d.why, quote: d.quote })), reason: r.reasoning, lines: f.lines.length, bytes: f.raw.length };
+});
+
+let board = null;
+const getBoard = (force) => (!board || force ? (board = scenarios.replayAll()) : board);
+
+function readBody(req) {
+  return new Promise((res, rej) => {
+    let b = '';
+    req.on('data', (d) => { b += d; if (b.length > 3e5) { rej(new Error('payload too large')); req.destroy(); } });
+    req.on('end', () => { try { res(b ? JSON.parse(b) : {}); } catch (e) { rej(e); } });
+    req.on('error', rej);
+  });
+}
+const send = (res, code, obj) => {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-length': Buffer.byteLength(body) });
+  res.end(body);
+};
+
+async function api(req, res, url) {
+  const p = url.pathname;
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,POST,OPTIONS' });
+    return res.end();
+  }
+  if (p === '/health') return send(res, 200, { ok: true, studio: 'Lumen Studio', files: c.files.length, entries: ledger.entries().length });
+
+  // ---- reads ----------------------------------------------------------
+  if (req.method === 'GET') {
+    if (p === '/api/state') {
+      const b = getBoard();
+      return send(res, 200, {
+        studio: 'Lumen Studio', owner: c.owner, day: ledger.getState().day,
+        counts: { files: c.files.length, workers: AGENTS.length, rules: policyRaw.rules.length, tests: b.results.length, entries: ledger.entries().length },
+        queueOpen: ledger.queue().filter((q) => q.status === 'waiting').length,
+        board: { points: b.points, max: b.max, kit: b.kit, kitMax: b.kitMax, ours: b.custom, oursMax: b.customMax },
+        canary: scenarios.canary(),
+      });
+    }
+    if (p === '/api/brief') { const g = briefing.generate(); return send(res, 200, { brief: g, text: briefing.plain(g) }); }
+    if (p === '/api/log') return send(res, 200, { entries: ledger.entries().slice().reverse(), queue: ledger.queue() });
+    if (p === '/api/files') return send(res, 200, { index: fileIndex, workers: AGENTS });
+    if (p === '/api/scenarios') return send(res, 200, { board: getBoard(true), canary: scenarios.canary(), scripts: scenarios.buildScenarios() });
+    if (p === '/api/policy') return send(res, 200, { policy: policyRaw, taxonomy, agents: AGENTS, tools: gate.EXTERNAL_TOOLS, floors: c.floors, priceList: c.priceList, receivables: c.receivables, payables: c.payables, clients: c.clients.map((x) => ({ name: x.name, email: x.email })), suppliers: c.suppliers.map((s) => s.name) });
+    if (p === '/api/day') return send(res, 200, { kit: KIT_SCRIPTS, routine: ROUTINE, ours: OURS });
+    if (p.startsWith('/api/file')) {
+      const rel = url.searchParams.get('path');
+      const f = c.byPath.get(rel);
+      if (!f) return send(res, 404, { error: 'no such file', rel });
+      return send(res, 200, { path: rel, title: f.title, declared: f.fm.sensitivity || null, lines: f.lines, info: cl.classifyFile(f) });
+    }
+    return send(res, 404, { error: 'no such endpoint', got: p });
+  }
+
+  // ---- writes ---------------------------------------------------------
+  if (p.startsWith('/api/queue/')) {
+    const id = p.split('/').pop();
+    const body = await readBody(req);
+    const q = ledger.queue().find((x) => x.id === id);
+    if (!q) return send(res, 404, { error: 'nothing in the queue with that id' });
+    if (q.releasePath === false) return send(res, 409, { error: 'this was a NEVER. The policy forbids it even if the owner appears to have asked.', queue: q });
+    const resolution = body.resolution === 'released' ? 'released' : body.resolution === 'declined' ? 'declined' : null;
+    if (!resolution) return send(res, 400, { error: 'resolution must be released or declined' });
+    return send(res, 200, { ...ledger.resolveQueue(id, resolution, body.by), brief: briefing.generate() });
+  }
+
+  if (p === '/api/gate') {
+    const body = await readBody(req);
+    const rec = gate.evaluate({ ...body, model: 'live' });
+    rec.actorName = ({ marketing: 'Marketing agent', sales: 'Sales agent', ops: 'Ops agent', finance: 'Finance agent', support: 'Support agent', ops2: 'Ops agent' })[body.actor] || 'A worker agent';
+    rec.ask = true;
+    rec.sim = true;
+    rec.purpose = body.intent || 'asked at the gate, live';
+    const entry = ledger.add(rec, { idempotency: 'ask:' + Date.now() + ':' + Math.random().toString(36).slice(2, 6) }).entry;
+    return send(res, 200, { entry, brief: briefing.generate() });
+  }
+
+  if (p === '/api/scenario') {
+    const body = await readBody(req);
+    const s = scenarios.buildScenarios().find((x) => x.id === body.id);
+    if (!s) return send(res, 404, { error: 'no such scenario' });
+    return send(res, 200, { run: scenarios.replay(s) });
+  }
+
+  if (p === '/api/night/run') {
+    const played = seedNight();
+    return send(res, 200, { played: played.length, brief: briefing.generate() });
+  }
+
+  return send(res, 404, { error: 'no such endpoint', got: p });
+}
+
+function serve(res, url) {
+  const rel = url.pathname === '/' ? '/index.html' : path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, '');
+  const file = path.join(PUB, rel);
+  if (!file.startsWith(PUB)) { res.writeHead(403); return res.end('forbidden'); }
+  fs.readFile(file, (err, buf) => {
+    if (err) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
+    res.end(buf);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+  try {
+    if (url.pathname.startsWith('/api/') || url.pathname === '/health') return await api(req, res, url);
+    return serve(res, url);
+  } catch (e) {
+    console.error(e);
+    return send(res, 500, { error: String((e && e.message) || e) });
+  }
+});
+
+ledger.init();
+if (!ledger.entries().length) seedNight();
+getBoard();
+
+server.listen(PORT, () => console.log('lumen-oversight listening on http://localhost:' + PORT));
