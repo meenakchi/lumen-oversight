@@ -33,13 +33,17 @@ jobs:
       - name: the brief must be honest about which voice wrote it
         run: |
           PORT=3999 node server.js & pid=$!
-          sleep 3
-          curl -fsS http://localhost:3999/api/brief -o /tmp/brief.json
-          cat /tmp/brief.json | node -e "
-            let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
-              const t=JSON.parse(s).text.split('\n').find(l=>l.startsWith('Wording:'));
-              if (!t) { console.error('no wording line'); process.exit(1); }
-              if (!/no model call on this host|phrased here/.test(t)) { console.error('wording line is not honest: '+t); process.exit(1); }
-              console.log('CI wording line:', t.slice(0,140));
-            });"
+          for i in $(seq 1 30); do sleep 1; curl -fsS http://localhost:3999/api/brief -o /tmp/brief.json && break; done
+          node -e '
+            const b = JSON.parse(require("fs").readFileSync("/tmp/brief.json","utf8")).brief;
+            const line = b.text.split("\n").find(l => l.startsWith("Wording:"));
+            if (!line) { console.error("no wording line"); process.exit(1); }
+            const v = b.voice;
+            console.log("CI:", line.slice(0, 150));
+            console.log("   voice:", JSON.stringify({used:v.used,total:v.total,live:v.live_on_this_host,cred:v.this_host_credential||null}));
+            // the assertion is about consistency with the data, not about a magic phrase
+            if (v.used > 0 && !/phrased here/.test(line)) { console.error("line claims no generation but voice says", v.used); process.exit(1); }
+            if (v.used === 0 && !/no model call on this host/.test(line)) { console.error("line does not admit that nothing was generated here"); process.exit(1); }
+            if (v.used === 0 && v.total !== 10) { console.error("total should be the phrasable count, got", v.total); process.exit(1); }
+          '
           kill $pid

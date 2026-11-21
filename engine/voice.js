@@ -502,6 +502,10 @@ function sameHost(v) {
   return Boolean(v && v.host && v.host.source && v.host.source === cur && (v.host.endpoint || null) === (BASE || null));
 }
 
+function phrasableCount(brief) {
+  return brief.sections.filter((x) => x.key !== 'allowed').flatMap((x) => x.items).length;
+}
+
 /** Merge generated phrasing into the deterministic brief object. */
 function apply(brief) {
   const v = load();
@@ -525,7 +529,11 @@ function apply(brief) {
       calls: v.calls, tokens: v.tokens, rejected: (v.rejections || []).length, rejections: v.rejections || [],
       reused: Boolean(v.reused), error: v.error || null, note: v.note || null, fresh: v.hash === hashOf(brief.sections.filter((s) => s.key !== 'allowed').flatMap((s) => s.items)),
     }
-    : { enabled: enabled(), model: MODEL, used: 0, total: items.length, live_on_this_host: false, calls: 0, note: 'not generated yet' };
+    : {
+      enabled: enabled(), model: MODEL, used: 0, total: phrasableCount(brief), live_on_this_host: false,
+      calls: 0, cache_host: null, this_host_credential: keySource(),
+      note: enabled() ? 'no generation on record for this state' : 'no model credential on this host; sentences are the rule engine\u2019s own',
+    };
   const sent = (v && v.phrases) || {};
   const allText = Object.values(sent).map((p) => `${p.headline} ${p.why} ${p.recommend || ''}`).join(' \n ');
   brief.guard = {

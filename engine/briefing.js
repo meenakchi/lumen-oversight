@@ -255,7 +255,9 @@ function plain(b, voiceInfo) {
   L.push(`4. Rule coverage — ${b.selfTest.rulesCovered}/${b.selfTest.rulesTotal} of your 19 rules exercised in a run last night; 19/19 have shipped behaviour behind them.`);
   L.push(`Classification check against the labels: ${b.classifier.correct}/${b.classifier.total}. Decisions made from 19 rules you wrote, not from vibes.`);
   const vi = voiceInfo || b.voice || {};
-  L.push(`Wording: ${vi.used ? `${vi.used} of ${vi.total} sentences phrased by ${vi.model} on ${vi.calls} call(s), every figure then checked against the audited facts` : 'written by the rule engine, no model call'}${vi.rejected ? `; ${vi.rejected} generated sentence(s) rejected and replaced` : ''}.`);
+  const credless = vi.enabled === false || !vi.live_on_this_host;
+  L.push(`Wording: ${vi.used ? `${vi.used} of ${vi.total} sentences phrased here by ${vi.model} on ${vi.calls} call(s), every figure then checked against the audited facts` : `all ${vi.total} sentences written by the rule engine \u2014 no model call on this host${vi.this_host_credential ? '' : ' (no credential)'}`}.`);
+  if (credless && !vi.used) L.push('  A recorded generation from a host that does have a key is kept on the Platform tab, labelled as recorded.');
   L.push('Answers, not alerts.');
   return L.filter((l, i) => l !== '' || i === 0 || L[i - 1] !== '').join('\n');
 }
