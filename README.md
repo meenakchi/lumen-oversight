@@ -55,7 +55,7 @@ server.js            zero-dependency Node http server: API + static
 | Model call (QwenWork MaaS chat, `qwen3.8-flash`) | writes the wording of the morning brief — never a verdict |
 | Fabrication guard (`engine/voice.js`) | generated prose is diffed against the audited facts on five axes: invented figures, invented file names, claims that data reached the outside world when the action was stopped, consequences no file documents, and contents of a *read file* attributed to the outbound draft. Any of them throws the sentence away and publishes the rule-engine wording instead |
 | Two-sided calibration (`POST /api/guard/calibration`) | replays three sentences the guard must accept and three fabrications it must reject against the live facts, and prints any row that disagrees with its own expectation |
-| Temptation dares (`POST /api/guard/tempt`, modes `numbers` and `breach`) | dares a model to invent a figure, or to claim the leak already happened, and records what came back |
+| Temptation dares (`POST /api/guard/tempt` (older alias `POST /api/voice/adversarial`, same behaviour), modes `numbers` and `breach`) | dares a model to invent a figure, or to claim the leak already happened, and records what came back |
 | Cloud schedules (no compute instance) | weekday 08:05 SGT: replay the night, regenerate the wording, deliver the six lines; nightly 02:00 SGT: run all ten scenarios + the canary and raise a regression as an alarm |
 | The app itself | zero npm dependencies; the platform is the infrastructure, not a package manager |
 

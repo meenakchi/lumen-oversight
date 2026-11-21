@@ -621,7 +621,7 @@ function renderPolicy() {
 
 /* ------------------------------------------------------------- platform */
 async function loadPlatform() {
-  const [vs, adv, cal] = await Promise.all([api('/api/voice'), api('/api/voice/adversarial'), api('/api/guard/calibration')]);
+  const [vs, adv, cal] = await Promise.all([api('/api/voice'), api('/api/guard/tempt'), api('/api/guard/calibration')]);
   STATE.voiceStatus = vs; STATE.adv = adv.runs || []; STATE.tally = adv.tally || null; STATE.calib = cal.calibration || null;
   renderPlatform();
 }
@@ -779,7 +779,7 @@ async function tempt(mode, btn) {
   $$('[data-act^=tempt]').forEach((b) => (b.disabled = true));
   const old = btn.textContent; btn.textContent = 'waiting for the model\u2026';
   try {
-    await api('/api/voice/adversarial', { mode });
+    await api('/api/guard/tempt', { mode });
     await loadPlatform();
     const rs = STATE.adv || [];
     const newest = rs[0];

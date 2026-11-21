@@ -79,7 +79,7 @@ async function api(req, res, url) {
       try { cal = JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'calibration.json'), 'utf8')); } catch (e) { cal = null; }
       return send(res, 200, { calibration: cal });
     }
-    if (p === '/api/voice/adversarial') {
+    if (p === '/api/guard/tempt' || p === '/api/voice/adversarial') {
       let runs = [];
       try { runs = JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'adversarial.json'), 'utf8')).runs; } catch (e) { runs = []; }
       return send(res, 200, { runs, tally: voice.tally() });
@@ -124,7 +124,7 @@ async function api(req, res, url) {
   }
 
 
-  if (req.method === 'POST' && p === '/api/voice/adversarial') {
+  if ((req.method === 'POST') && (p === '/api/guard/tempt' || p === '/api/voice/adversarial')) {
     const body = await readBody(req);
     const b = briefing.generate();
     const cand = b.sections.filter((s) => s.key !== 'allowed').flatMap((s) => s.items)
@@ -210,5 +210,30 @@ const server = http.createServer(async (req, res) => {
 ledger.init();
 if (!ledger.entries().length) seedNight();
 getBoard();
+
+// A cold clone has no wording cache and a judge has pressed nothing yet. If a model
+// credential exists, generate once in the background so the first screen shows the real
+// feature instead of an empty button. If it does not exist, log that and stay
+// deterministic \u2014 the app never implies a call it did not make.
+function autoPhrase() {
+  if (!voice.enabled()) {
+    console.log('[voice] no model credential on this host: the brief stays in the rule engine\u2019s own words');
+    return;
+  }
+  if (voice.hasFreshCache()) {
+    console.log('[voice] wording cache is current; no model call needed');
+    return;
+  }
+  console.log('[voice] phrasing the brief in the background\u2026');
+  setTimeout(async () => {
+    try {
+      const v = await voice.refresh(briefing.generate(), false);
+      console.log(`[voice] ${Object.keys(v.phrases || {}).length} sentences phrased on ${v.calls} call(s); ${(v.rejections || []).length} rejected by the guard${v.error ? '; error: ' + String(v.error).slice(0, 90) : ''}`);
+    } catch (e) {
+      console.log('[voice] auto-phrasing failed, so the brief keeps the rule engine\u2019s wording:', String((e && e.message) || e).slice(0, 120));
+    }
+  }, 2000);
+}
+autoPhrase();
 
 server.listen(PORT, () => console.log('lumen-oversight listening on http://localhost:' + PORT));

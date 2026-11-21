@@ -650,8 +650,17 @@ function calibration(brief) {
   };
 }
 
+function hasFreshCache() {
+  const v = load();
+  if (!v || !v.phrases || !Object.keys(v.phrases).length) return false;
+  try {
+    const b = require('./briefing').generate();
+    return v.hash === hashOf(b.sections.filter((s) => s.key !== 'allowed').flatMap((s) => s.items));
+  } catch (e) { return false; }
+}
+
 function calibrationOfLast() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'state', 'calibration.json'), 'utf8')); } catch (e) { return null; }
 }
 
-module.exports = { refresh, apply, status, tally, calibration, calibrationOfLast, guard, factsFor, enabled, MODEL, adversarial };
+module.exports = { refresh, apply, status, tally, calibration, calibrationOfLast, hasFreshCache, guard, factsFor, enabled, MODEL, adversarial };
