@@ -1,0 +1,12 @@
+node_modules/
+npm-debug.log
+.DS_Store
+
+# runtime state the app rebuilds on its own
+state/ledger.json
+state/voice.json
+
+# keep tracked, they are the evidence:
+#   state/schedule.json      the two cloud schedules + what the last run delivered
+#   state/adversarial.json   rolling temptation runs
+#   state/guard-tally.json   all-time guard tally

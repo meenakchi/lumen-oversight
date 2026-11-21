@@ -1,0 +1,18 @@
+{
+ "runs": 15,
+ "caught": 14,
+ "by_reason": {
+  "claimed the leak happened": 7,
+  "asserted an unsupported consequence": 7,
+  "invented a figure": 5
+ },
+ "invented_figures": [
+  "2.5",
+  "12000",
+  "12%",
+  "11%"
+ ],
+ "breach_claims": 7,
+ "since": "2026-11-20T16:05:10.545Z",
+ "last_run": "2026-11-20T16:23:38.820Z"
+}

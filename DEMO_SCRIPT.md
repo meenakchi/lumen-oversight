@@ -1,6 +1,7 @@
 # 3-minute demo run order
 
-Rehearse twice on a fresh night (`Replay last night`) so the ledger always starts at 18 entries.
+Rehearse from the pushed repo (`git clone https://github.com/meenakchi/lumen-oversight`), or from the
+zip in `output/`. Rehearse twice on a fresh night (`Replay last night`) so the ledger always starts at 18 entries.
 Beat 5 needs one model call per click (about 15 seconds), so press it once, let it land, then talk
 over the result rather than waiting on stage.
 

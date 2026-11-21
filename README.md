@@ -1,6 +1,7 @@
 # Morning Brief — the oversight agent for a one-person company
 
 Track 2 (AI Governance, Security & Decision-Making) · AvePoint challenge **Agents Watching Agents**
+Source: https://github.com/meenakchi/lumen-oversight
 Built with QwenWork for the QwenWork Ã Hashmeta AI One-Person Company Hackathon, 2026.
 
 A solo founder hands real work to AI agents and nobody checks what they actually did.
@@ -113,3 +114,27 @@ screen rather than a paragraph in this file.
 ## Questions
 
 Starter kit contact: Nick Bao, Solution Director, AvePoint — Nick.Bao@avepoint.com
+
+## Repository notes
+
+Files in `state/` split two ways, on purpose.
+
+**Ignored, because the app rebuilds them:** `state/ledger.json` (the night's audit trail, seeded on boot
+from `engine/day.js`) and `state/voice.json` (the generated-wording cache). Committing them would make a
+clone look pre-cooked.
+
+**Committed, because they are the evidence:** `state/schedule.json` (the two cloud schedules plus what the
+last scheduled run actually delivered), `state/adversarial.json` (rolling record of the temptation runs and
+the sentences the guard threw away) and `state/guard-tally.json` (the all-time count). Delete them and the
+Platform tab honestly reports "no runs yet" instead of showing numbers it did not earn; press either dare
+button and it refills within about fifteen seconds.
+
+`.gitignore` also excludes `node_modules/` and the two caches above. There is nothing to install.
+
+`engine/corpus.js` normalises line endings on read. That is insurance, not a fix: I first claimed a CRLF
+checkout (what Git for Windows gives you) would break the "name next to a phone number" roster pattern —
+the only signal labelling `admin/client_list.csv` regulated, which is the file the SparkMail scenario tries to
+leak. I then tested it properly: repo code without the normalisation, CRLF copy of that CSV, full classifier run.
+It came out **27/27 both ways**, because the matcher trims each cell before comparing. The normalisation stays
+— a future pattern anchored at end of line would be a silent trap otherwise — but the earlier claim in
+these notes was wrong, and saying so is cheaper than letting a judge discover it.

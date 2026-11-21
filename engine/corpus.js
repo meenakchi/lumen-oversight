@@ -33,7 +33,10 @@ function money(str) {
 
 function loadFile(rel) {
   const abs = path.join(DATA, rel);
-  const raw = fs.readFileSync(abs, 'utf8');
+  // Normalise line endings first. Git on Windows checks the kit's CSV out with CRLF,
+  // and a trailing \r breaks the "name next to a phone number" roster pattern that
+  // labels admin/client_list.csv as regulated.
+  const raw = fs.readFileSync(abs, 'utf8').replace(/\r\n?/g, '\n');
   const fm = parseFrontMatter(raw);
   const lines = raw.split('\n');
   // Sensitivity markers in the corpus are unreliable (client_list.csv has none),
