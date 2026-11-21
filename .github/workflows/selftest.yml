@@ -1,74 +1,129 @@
 name: self-test
 
-# The promises in README.md are assertions here. No model key, no network, nothing to pay:
-# a fork can run this and get the same numbers the Platform tab shows.
+# The promises in README.md are assertions here. Two lanes on purpose:
+#   unit   — pure Node, offline, no key, nothing to pay
+#   live   — boots the real app once and asserts what the API actually returns
+# GitHub runners have 2 cores and no model credential, which is exactly the
+# degraded configuration the app claims to handle honestly. So CI verifies that claim.
 
 on:
   push:
   pull_request:
   schedule:
-    - cron: '0 2 * * *'   # mirrors the nightly oversight self-test, at the same hour
+    - cron: '0 2 * * *'   # mirrors the nightly oversight self-test, same hour
+
+permissions:
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: self-test (classifier, scenarios, canary, decision semantics, guard vectors)
+
+      - name: 'self-test — classifier, scenarios, canary, decision semantics, guard vectors, integrity'
         run: node tests/run.js
-      - name: boot the app and check it answers
-        run: |
-          PORT=3999 node server.js & pid=$!
-          for i in $(seq 1 30); do
-            sleep 1
-            curl -fsS http://localhost:3999/health > /tmp/health.json && break
-          done
-          cat /tmp/health.json
-          echo "a CI host has no model key, as expected:"
-          curl -fsS http://localhost:3999/api/voice | head -c 200
-          kill $pid
-      - name: rulebook integrity (policy.json is the source; drift is caught)
+
+      - name: 'rulebook report — policy.json is the source, drift is caught, chain verifies'
         run: |
           node scripts/integrity.js
-          node -e '
-            const fs=require("fs"), cp=require("child_process"), os=require("os"), path=require("path");
-            const integ=require("./engine/integrity");
-            // a live decision must carry the rulebook hash it came from
-            const gate=require("./engine/gate");
-            const rec=gate.evaluate({actor:"ops",action:"pay_supplier",supplier:"Jia Wen",amount:1200,invoice:"QP-88812",
-              files:["finance/invoice_2026-037_quickprint.md"],scope:["finance/invoice_2026-037_quickprint.md"]});
-            if (!rec.policy_sha) { console.error("decision carries no rulebook hash"); process.exit(1); }
-            if (rec.decision !== "HOLD") { console.error("expected HOLD under the committed rulebook, got", rec.decision); process.exit(1); }
-            // same code, edited rulebook: drift must be reported, not absorbed
-            const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"drift-"));
-            cp.execSync(`mkdir -p ${tmp}/rules && cp rules/*.json ${tmp}/rules/`);
-            const pl=JSON.parse(fs.readFileSync(tmp+"/rules/policy.json","utf8"));
-            pl.rules.find(x=>x.id==="R10").condition="an invoice already received, under SGD 99,999";
-            fs.writeFileSync(tmp+"/rules/policy.json", JSON.stringify(pl,null,1));
-            const r=integ.report({root:tmp, baselineFile:path.resolve("state/integrity.json")});
-            if (!r.drifted.includes("rules/policy.json")) { console.error("edited rulebook did not register as drift"); process.exit(1); }
-            const lim=require("./engine/rules").LIMITS.payStanding;
-            if (lim !== 1000) { console.error("engine limit should still read the committed file, got", lim); process.exit(1); }
-            fs.rmSync(tmp,{recursive:true,force:true});
-            console.log("integrity: hash on decisions + drift on edited rulebook");
-          '
-      - name: the brief must be honest about which voice wrote it
+          node scripts/integrity-chain.js
+
+      - name: 'integration — boot the real app once and assert live behaviour'
+        env:
+          PORT: '3999'
         run: |
-          PORT=3999 node server.js & pid=$!
-          for i in $(seq 1 30); do sleep 1; curl -fsS http://localhost:3999/api/brief -o /tmp/brief.json && break; done
+          set -euo pipefail
+          node server.js >/tmp/app.log 2>&1 &
+          pid=$!
+          cleanup() {
+            kill $pid 2>/dev/null || true
+            wait $pid 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          # On boot this app replays the whole night: 18 gate decisions, the ten
+          # scenario runs, the canary and the audit chain. On a 2-core runner that
+          # is not instant, so we poll for readiness instead of assuming a sleep.
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -fsS -m 3 "http://127.0.0.1:${PORT}/health" -o /tmp/health.json 2>/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then
+            echo "::error::server never became healthy within 60s"
+            sed -n '1,120p' /tmp/app.log
+            exit 1
+          fi
+          echo "health: $(cat /tmp/health.json)"
+
+          code=$(curl -s -o /tmp/brief.json -w '%{http_code}' -m 40 "http://127.0.0.1:${PORT}/api/brief")
+          if [ "$code" != 200 ]; then
+            echo "::error::GET /api/brief returned HTTP $code"
+            sed -n '1,120p' /tmp/app.log
+            exit 1
+          fi
+          [ -s /tmp/brief.json ] || { echo "::error::/api/brief returned an empty body"; exit 1; }
+
+          curl -fsS -m 40 "http://127.0.0.1:${PORT}/api/integrity" -o /tmp/integrity.json
+          curl -fsS -m 40 "http://127.0.0.1:${PORT}/api/voice"     -o /tmp/voice.json
+
           node -e '
-            const b = JSON.parse(require("fs").readFileSync("/tmp/brief.json","utf8")).brief;
-            const line = b.text.split("\n").find(l => l.startsWith("Wording:"));
-            if (!line) { console.error("no wording line"); process.exit(1); }
-            const v = b.voice;
-            console.log("CI:", line.slice(0, 150));
-            console.log("   voice:", JSON.stringify({used:v.used,total:v.total,live:v.live_on_this_host,cred:v.this_host_credential||null}));
-            // the assertion is about consistency with the data, not about a magic phrase
-            if (v.used > 0 && !/phrased here/.test(line)) { console.error("line claims no generation but voice says", v.used); process.exit(1); }
-            if (v.used === 0 && !/no model call on this host/.test(line)) { console.error("line does not admit that nothing was generated here"); process.exit(1); }
-            if (v.used === 0 && v.total !== 10) { console.error("total should be the phrasable count, got", v.total); process.exit(1); }
+          (async () => {
+            const fs = require("fs");
+            const read = (f) => JSON.parse(fs.readFileSync(f, "utf8"));
+            const doc = read("/tmp/brief.json");          // text is a sibling of brief in the response
+            const b = doc.brief;
+            const ig = read("/tmp/integrity.json");
+            const vo = read("/tmp/voice.json");
+            const v = b.voice || {};
+            const nl = String.fromCharCode(10);
+            const line = (doc.text || "").split(nl).find((l) => l.startsWith("Wording:"));
+            const fail = (m) => { console.error("FAIL: " + m); process.exit(1); };
+
+            console.log("wording line  :", line || "(none)");
+            console.log("voice         :", JSON.stringify({ used: v.used, total: v.total, live: v.live_on_this_host, cred: v.this_host_credential || null }));
+            console.log("model avail   :", vo.available, "| drift:", JSON.stringify((ig.report || {}).drifted), "| R10 limit:", ig.limits && ig.limits.payStanding);
+
+            // the wording paragraph must describe what the data says, in either mode
+            if (!line) fail("no Wording: line in the returned brief text");
+            if (v.used > 0 && !/phrased here/.test(line)) fail("voice.used=" + v.used + " but the line hides that a model wrote it");
+            if (!v.used && !/no model call on this host/.test(line)) fail("nothing was generated on this host and the line does not admit it");
+
+            // total counts the phrasable items, not all ledger rows
+            if (v.total !== 10) fail("voice.total should be the 10 phrasable actions, got " + v.total);
+
+            // headline product claims, evaluated live rather than asserted in docs
+            if (!b.counts || b.counts.dataLeft !== 0) fail("records that left the studio should be 0");
+            if (!b.classifier || b.classifier.correct !== b.classifier.total) fail("classifier regressed: " + JSON.stringify(b.classifier));
+            if (!b.selfTest || b.selfTest.points !== b.selfTest.max) fail("scenario board regressed: " + JSON.stringify(b.selfTest && { got: b.selfTest.points, of: b.selfTest.max }));
+            if (!b.guard || (b.guard.claims_data_left || 0) !== 0) fail("published prose contains an unnegated leak claim: " + JSON.stringify(b.guard));
+
+            // rulebook integrity
+            if (((ig.report || {}).drifted || []).length) fail("rulebook drift on a clean checkout: " + ig.report.drifted.join(", "));
+            if (!ig.policy_sha) fail("no rulebook hash published");
+            if (!ig.limits || ig.limits.payStanding !== 1000) fail("R10 limit was not read from policy.json: " + JSON.stringify(ig.limits));
+            if ((b.items || []).some((r) => !r.policy_sha)) fail("some decisions carry no rulebook hash");
+
+            // a live gate call must reach the right verdict with no model involved
+            const g = await fetch("http://127.0.0.1:" + process.env.PORT + "/api/gate", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                actor: "marketing", action: "upload_to_external_tool", file: "admin/client_list.csv",
+                files: ["admin/client_list.csv"], target: "sparkmail.example", scope: ["admin/client_list.csv"],
+              }),
+            }).then((r) => r.json());
+            if (!g.entry) fail("gate call returned no entry: " + JSON.stringify(g).slice(0, 200));
+            if (g.entry.decision !== "BLOCK") fail("the client-list upload was not blocked: " + g.entry.decision);
+            if (!g.entry.policy_sha) fail("live decision carries no rulebook hash");
+            console.log("live gate     :", g.entry.decision, g.entry.rules.map((h) => h.id).join(","), "under rulebook " + g.entry.policy_sha);
+
+            if (!vo.available) console.log("note: CI is keyless; the app reported that instead of implying a model ran");
+            console.log("integration OK");
+          })().catch((e) => { console.error("FAIL: " + (e && e.message)); process.exit(1); });
           '
-          kill $pid

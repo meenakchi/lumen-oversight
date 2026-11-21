@@ -458,8 +458,7 @@ function switchTab(name, quiet) {
   if (name === 'ledger') renderTable();
   if (name === 'lab' && STATE.scn) renderLab();
   if (name === 'question') renderQuestion();
-  if (name === 'policy' && STATE.policy) renderPolicy();
-  if (name === 'policy') { renderPolicy(); }
+  if (name === 'policy') renderPolicy();
   if (name === 'platform') loadPlatform();
   window.scrollTo({ top: 0, behavior: 'smooth' });
   return true;
@@ -567,12 +566,6 @@ async function runAll(btn) {
 
 /* --------------------------------------------------------- rules & policy */
 async function loadPolicy() {
-  const [policy, files] = await Promise.all([api('/api/policy'), api('/api/files')]);
-  STATE.policy = policy; STATE.files = files;
-  renderPolicy();
-}
-
-async function loadPolicy() {
   const [policy, files, integ] = await Promise.all([api('/api/policy'), api('/api/files'), api('/api/integrity')]);
   Object.assign(STATE, { policy, files, integrity: integ });
   renderPolicy();
@@ -584,6 +577,9 @@ function renderPolicy() {
   if (!p || !STATE.brief || !STATE.files) return;
   const used = new Set();
   for (const e of STATE.log) for (const h of e.rules) used.add(h.id);
+  // the card cannot live inside the table: browsers discard a <div> in <table> content
+  const slot = $('#integritySlot');
+  if (slot) slot.innerHTML = IG ? integrityCard(IG) : '<p class="hint">integrity data not loaded \u2014 reload the page</p>';
   $('#rulesTable').innerHTML = `<thead><tr><th>Rule</th><th>Action</th><th>Condition</th><th>Decision</th><th>Ran last night</th></tr></thead>
     <tbody>${p.policy.rules.map((r) => `<tr data-rule="${r.id}" ${used.has(r.id) ? 'class="hit"' : ''}>
       <td class="mono"><b>${r.id}</b></td><td>${esc(r.action.replace(/_/g, ' '))}</td>
@@ -843,7 +839,7 @@ function integrityCard(IG) {
         </tr>`).join('')}
       </tbody></table>
       <p class="hint" style="margin-top:8px">${esc(r.note || '')}</p>
-      <p class="hint" style="margin-top:6px">Ledger chain: ${IG.chain && IG.chain.present ? `${IG.chain.rows} rows, head ${IG.chain.head_matches ? 'verified' : 'BROKEN at ' + (IG.chain.broken && IG.chain.broken.id)}` : 'not built in this boot'}.
+      <p class="hint" style="margin-top:6px">Ledger chain: ${IG.chain && IG.chain.present ? `${IG.chain.state} \u2014 ${IG.chain.rows} rows recorded, ${IG.chain.entries} entries live${IG.chain.new_rows ? `, ${IG.chain.new_rows} added since` : ''}${IG.chain.broken ? `, broken at ${IG.chain.broken.id}` : ''}` : 'not built in this boot'}. ${IG.chain && IG.chain.note ? esc(IG.chain.note) : ''}
       ${bad ? `<br><b style="color:var(--block)">Drift detected. ${esc((r.drifted || []).join(', '))} does not match the committed anchor in state/integrity.json \u2014 check <code>git diff</code> before trusting a single decision on this page.</b>` : ''}</p>
       <p class="hint" style="margin-top:6px">${esc((r.note || '').split('The anchor that is hard to quietly change')[1] ? 'The anchor that is hard to quietly change is the one in the git commit \u2014 ' + esc(r.note.split('The anchor that is hard to quietly change')[1]) : '')}</p>
     </div>`;
@@ -866,8 +862,10 @@ setTimeout(() => {
 const HEADLINES = null;
 
 async function boot() {
-  const [state, briefRes, policyRes, filesRes] = await Promise.all([api('/api/state'), api('/api/brief'), api('/api/policy'), api('/api/files')]);
-  Object.assign(STATE, { state, brief: briefRes.brief, text: briefRes.text, policy: policyRes, files: filesRes });
+  const [state, briefRes, policyRes, filesRes, integrityRes] = await Promise.all([
+    api('/api/state'), api('/api/brief'), api('/api/policy'), api('/api/files'), api('/api/integrity'),
+  ]);
+  Object.assign(STATE, { state, brief: briefRes.brief, text: briefRes.text, policy: policyRes, files: filesRes, integrity: integrityRes });
   await Promise.all([refreshLog(), loadLab()]);
   renderPolicy();
   renderBrief();

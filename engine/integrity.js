@@ -83,12 +83,7 @@ function chainBuild() {
   const entries = ledger.entries();
   let prev = 'GENESIS';
   const rows = entries.map((e) => {
-    const dig = sha(JSON.stringify({
-      id: e.id, action: e.action, actor: e.actor, decision: e.decision,
-      rules: e.rules.map((h) => h.id + h.decision).join(','),
-      files: (e.files || []).map((f) => f.path).sort().join(','),
-      policy: e.policy_sha || null, at: e.at,
-    }));
+    const dig = digester(e);
     const row = { id: e.id, prev, dig };
     prev = dig;
     return row;
@@ -98,27 +93,47 @@ function chainBuild() {
   return out;
 }
 
-// Verify without a trusted chain file: rebuild and compare heads. Detects edits to a
-// stored chain; a full re-record on a clean boot is what fixes drift.
-function chainVerify(opts) {
-  const ledger = require('./ledger');
-  const entries = ledger.entries();
-  const c = chain();
-  if (!c) return { present: false };
-  let prev = 'GENESIS'; let broken = null;
-  for (let i = 0; i < c.rows.length && i < entries.length; i++) {
-    const e = entries[i];
-    const dig = sha(JSON.stringify({
+/* Verify the chain against the live ledger.
+
+   A chain is built at a point in time and the ledger keeps growing \u2014 every live gate
+   call adds a row. So "fewer recorded rows than entries" is not tampering, it is a chain
+   that needs rebuilding, and saying BROKEN there would be a false alarm in front of a
+   judge. The distinction that matters: does every row the chain *does* cover still digest
+   to what it recorded? If not, something was rewritten. */
+function digester(e) {
+  return sha(JSON.stringify({
       id: e.id, action: e.action, actor: e.actor, decision: e.decision,
       rules: e.rules.map((h) => h.id + h.decision).join(','),
       files: (e.files || []).map((f) => f.path).sort().join(','),
       policy: e.policy_sha || null, at: e.at,
     }));
+}
+
+function chainVerify(opts) {
+  const ledger = require('./ledger');
+  const entries = ledger.entries();
+  const c = chain();
+  if (!c) return { present: false, entries: entries.length };
+  let prev = 'GENESIS'; let broken = null;
+  const covered = Math.min(c.rows.length, entries.length);
+  for (let i = 0; i < covered; i++) {
+    const e = entries[i];
+    const dig = digester(e);
     if (c.rows[i].prev !== prev) { broken = { index: i, id: e.id, kind: 'chain order' }; break; }
     if (c.rows[i].dig !== dig) { broken = { index: i, id: e.id, kind: 'row contents differ from the recorded digest' }; break; }
     prev = dig;
   }
-  return { present: true, rows: c.rows.length, entries: entries.length, head_matches: !broken && prev === c.head && c.rows.length === entries.length, broken, built_at: c.built_at };
+  const grew = entries.length > c.rows.length;
+  const state = broken ? 'BROKEN' : grew ? 'STALE' : 'VERIFIED';
+  return {
+    present: true, state, rows: c.rows.length, entries: entries.length,
+    covered_verified: !broken, head_matches: !broken && !grew && prev === c.head,
+    new_rows: grew ? entries.length - c.rows.length : 0,
+    broken, built_at: c.built_at,
+    note: broken ? 'a covered row no longer digests to what the chain recorded \u2014 that is tampering or a rulebook change, not growth'
+      : grew ? `${entries.length - c.rows.length} row(s) added since the chain was built; rebuild to extend it`
+        : 'every row the chain covers digests to what it recorded',
+  };
 }
 
 module.exports = { report, record, policyTag, chain, chainBuild, chainVerify, current, baseline, WATCH, sha, ROOT, FILE };

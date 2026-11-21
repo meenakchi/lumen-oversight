@@ -119,7 +119,8 @@ async function api(req, res, url) {
     rec.sim = true;
     rec.purpose = body.intent || 'asked at the gate, live';
     const entry = ledger.add(rec, { idempotency: 'ask:' + Date.now() + ':' + Math.random().toString(36).slice(2, 6) }).entry;
-    return send(res, 200, { entry, brief: briefing.generate() });
+    try { require('./engine/integrity').chainBuild(); } catch (e) { /* the chain is rebuilt on boot too; a failure here must not lose the decision */ }
+    return send(res, 200, { entry, brief: voice.apply(briefing.generate()) });
   }
 
   if (p === '/api/scenario') {
@@ -169,6 +170,7 @@ async function api(req, res, url) {
 
   if (p === '/api/night/run') {
     const played = seedNight();
+    try { require('./engine/integrity').chainBuild(); } catch (e) { /* best effort */ }
     return send(res, 200, { played: played.length, brief: voice.apply(briefing.generate()) });
   }
 
