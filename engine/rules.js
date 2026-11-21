@@ -97,4 +97,17 @@ const TAIL = {
   R02: 'Nothing left the studio; you are hearing about it because reads count.',
 };
 
-module.exports = { policyRaw, taxonomy, groundTruth, scenariosKit, RANK, LABEL, OUTCOME, byId, levelOf, atLeast, scanText, HINTS, SHORT_WHY, TAIL, CATEGORY, sensitiveIn };
+// Parameters are read out of the rule text itself, so policy.json is the source of
+// behaviour, not a caption under it. If someone raises the standing payment limit in the
+// file, the gate's decision changes — which is exactly why the hash is stamped everywhere.
+function numberIn(ruleId, fallback) {
+  const r = byId.get(ruleId);
+  if (!r) return fallback;
+  const m = String(r.condition).match(/(?:under|below|less than|up to)\s*(?:SGD\s*)?([\d][\d,]*)/i);
+  if (!m) return fallback;
+  const n = Number(m[1].replace(/,/g, ''));
+  return Number.isFinite(n) ? n : fallback;
+}
+const LIMITS = { payStanding: numberIn('R10', 1000) };
+
+module.exports = { policyRaw, taxonomy, LIMITS, numberIn, groundTruth, scenariosKit, RANK, LABEL, OUTCOME, byId, levelOf, atLeast, scanText, HINTS, SHORT_WHY, TAIL, CATEGORY, sensitiveIn };

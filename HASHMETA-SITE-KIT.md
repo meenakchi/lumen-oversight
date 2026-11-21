@@ -78,7 +78,16 @@ calibration table, the audit trail row for a blocked upload.
   stopped — **21 of 24 dared sentences thrown away** in the recorded runs, and the tab prints the
   invented values it refused.
 
-### 4. Who it's for
+### 4. Who edited the rules? (the question every governance buyer asks)
+
+> The obvious attack isn't a clever agent, it's a quiet edit to the policy file. So the limits are read
+> out of `rules/policy.json` itself \u2014 change "under SGD 1,000" and what gets stopped genuinely
+> changes. Every decision is stamped with the hash of the rulebook it was made under, and the audit rows
+> chain into a digest, so rewriting one row breaks the chain from that row onward. What we don't claim:
+> tamper-proofing. Anyone with write access can re-record the anchor \u2014 the anchor is committed, so
+> tampering shows up as a diff in git, and history can't be quietly re-interpreted under a new rulebook.
+
+### 5. Who it's for
 
 Anyone running agents on a business that has clients, contracts, bank details, or health data.
 Start by reading the rules — if they don't match how you work, they're the file you're meant to
@@ -110,11 +119,14 @@ deterministic, the ledger is a file, and there is a self-test you can run withou
 | SGD 10,660 that did not move | `GET /api/brief → counts.protected` |
 | 21/24 dared sentences thrown away | `GET /api/guard/tempt → tally` (moves every time anyone dares it — say "on the current build" or re-read the day you publish) |
 | 19 rules, 4 levels, 5 worker agents | `GET /api/state → counts` |
+| rulebook hash + no drift | `GET /api/integrity` (`report.ok`, `policy_sha`, `limits.payStanding`) |
 
 ## What the page must not claim
 
 - Not "AI protects your business automatically" — it enforces a policy a human wrote, and the queue is
   where the judgement stays human.
+- Not "tamper-proof" \u2014 the integrity system is drift detection against a committed anchor. Say so; it
+  is the claim that makes the rest credible.
 - Not "catches everything" — it reports the rules it has, in a closed-world corpus. A figure that
   matches by value but is wrong in meaning would pass the guard; the guard's own limits are on the
   Platform tab, so put them here too: it proves figures were not invented, not that a sentence is wise.

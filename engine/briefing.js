@@ -65,6 +65,7 @@ function item(rec, s) {
     figuresUnsupported: (rec.claims || []).filter((cl) => cl.verdict !== 'supported').length,
     figuresTraced: (rec.claims || []).filter((cl) => cl.verdict === 'supported').length,
     money,
+    policy_sha: rec.policy_sha || null,
     stake,
     stoppedWhat: rec.stoppedWhat || null,
     recommendation: rec.decision === 'HOLD' ? RECOMMEND[rule.id] || 'Your call \u2014 one tap releases or kills it.' : rec.decision === 'BLOCK' ? 'Nothing to approve. This one has no release button, because your own policy says never.' : (rec.rewriteCheck || 'Sent and logged. Nothing needed from you.'),

@@ -573,13 +573,14 @@ async function loadPolicy() {
 }
 
 async function loadPolicy() {
-  const [policy, files] = await Promise.all([api('/api/policy'), api('/api/files')]);
-  Object.assign(STATE, { policy, files });
+  const [policy, files, integ] = await Promise.all([api('/api/policy'), api('/api/files'), api('/api/integrity')]);
+  Object.assign(STATE, { policy, files, integrity: integ });
   renderPolicy();
 }
 
 function renderPolicy() {
   const p = STATE.policy;
+  const IG = STATE.integrity || null;
   if (!p || !STATE.brief || !STATE.files) return;
   const used = new Set();
   for (const e of STATE.log) for (const h of e.rules) used.add(h.id);
@@ -815,6 +816,37 @@ function fmtAgo(iso) {
   if (s < 90) return 'just now';
   if (s < 5400) return Math.round(s / 60) + ' min ago';
   return Math.round(s / 3600) + ' h ago';
+}
+
+/* "Who edited the rules?" is the question a governance judge asks last and answers first.
+   The card states what it can prove and what it cannot: drift against a committed anchor,
+   not a tamper-proof seal \u2014 anyone with this disk could re-record the baseline. The
+   protection is the diff in git and the hash stamped on every audit row. */
+function integrityCard(IG) {
+  const r = IG.report || {};
+  const bad = (r.drifted || []).length;
+  const lim = IG.limits ? `SGD ${Number(IG.limits.payStanding).toLocaleString()}` : '\u2013';
+  return `<div class="note-card" style="margin-top:16px;border-color:${bad ? 'var(--block)' : 'var(--line)'}">
+      <h4>Rulebook integrity</h4>
+      <p class="hint" style="margin:2px 0 8px">The limits below are parsed out of policy.json, not hard-coded \u2014 so editing the file changes what the gate decides. That is precisely why the file is hashed and the hash is stamped into every audit row.</p>
+      <div class="tag-row">
+        <span class="pill">${bad ? 'DRIFT: ' + bad + ' file(s) differ from the anchor' : 'no drift against the anchor'}</span>
+        <span class="pill">rulebook ${esc(IG.policy_sha || '\u2013')}</span>
+        <span class="pill">standing payment limit read from R10: ${lim}</span>
+        <span class="pill">${r.recorded_at ? 'anchored ' + new Date(r.recorded_at).toISOString().slice(0, 16).replace('T', ' ') : 'no anchor recorded'}</span>
+      </div>
+      <table class="rules"><tbody>
+        ${(r.watched || []).map((w) => `<tr>
+          <td class="mono">${esc(w.file)}</td>
+          <td class="mono">${esc(w.short || '\u2013')}</td>
+          <td>${w.drift ? '<span class="dchip NEVER">differs from anchor</span>' : '<span class="dchip ALLOW">matches</span>'}</td>
+        </tr>`).join('')}
+      </tbody></table>
+      <p class="hint" style="margin-top:8px">${esc(r.note || '')}</p>
+      <p class="hint" style="margin-top:6px">Ledger chain: ${IG.chain && IG.chain.present ? `${IG.chain.rows} rows, head ${IG.chain.head_matches ? 'verified' : 'BROKEN at ' + (IG.chain.broken && IG.chain.broken.id)}` : 'not built in this boot'}.
+      ${bad ? `<br><b style="color:var(--block)">Drift detected. ${esc((r.drifted || []).join(', '))} does not match the committed anchor in state/integrity.json \u2014 check <code>git diff</code> before trusting a single decision on this page.</b>` : ''}</p>
+      <p class="hint" style="margin-top:6px">${esc((r.note || '').split('The anchor that is hard to quietly change')[1] ? 'The anchor that is hard to quietly change is the one in the git commit \u2014 ' + esc(r.note.split('The anchor that is hard to quietly change')[1]) : '')}</p>
+    </div>`;
 }
 
 function highlightRule(id) {

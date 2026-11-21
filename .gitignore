@@ -11,3 +11,6 @@ state/voice.json
 #   state/adversarial.json     rolling temptation runs
 #   state/guard-tally.json     the accumulator, with its rebuild note
 #   state/wording-record.json  one recorded generation, shown as an exhibit on hosts with no key
+
+# rebuilt at boot from the live ledger (the report it feeds is committed via integrity.json)
+state/integrity-chain.json

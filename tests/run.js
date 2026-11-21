@@ -4,6 +4,7 @@
 'use strict';
 const assert = require('assert');
 const path = require('path');
+const fs = require('fs');
 
 const { corpus, reload } = require('../engine/corpus');
 const cl = require('../engine/classify');
@@ -177,6 +178,55 @@ t('all 19 policy rules have shipped behaviour', () => {
   for (const e of ledger.entries()) for (const h of e.rules) ids.add(h.id);
   const missing = policyRaw.rules.filter((p) => !ids.has(p.id)).map((p) => p.id);
   assert.ok(missing.length <= 4, 'unexercised rules: ' + missing.join(', '));
+});
+
+// 6. rulebook integrity: policy drives behaviour, drift is detected, edits are provable
+const integrity = require('../engine/integrity');
+const { LIMITS } = require('../engine/rules');
+t('the standing payment limit is read from policy.json, not hard-coded', () => {
+  assert.strictEqual(LIMITS.payStanding, 1000);
+  const pol = require('../rules/policy.json');
+  const r10 = pol.rules.find((x) => x.id === 'R10');
+  assert.ok(/under SGD 1,000/.test(r10.condition), r10.condition);
+});
+t('every decision carries the rulebook hash it was made under', () => {
+  const miss = ledger.entries().filter((e) => !e.policy_sha);
+  assert.strictEqual(miss.length, 0, miss.length + ' rows without a policy_sha');
+});
+t('rulebook drift would be caught against the committed anchor', () => {
+  const r = integrity.report();
+  assert.deepStrictEqual(r.drifted, [], 'drift now: ' + r.drifted.join(','));
+  assert.ok(r.ok, 'anchor unreadable: ' + r.note);
+  const tmp = require('os').tmpdir() + '/it-drift-' + Date.now();
+  require('child_process').execSync(`mkdir -p ${tmp}/rules && cp rules/*.json ${tmp}/rules/`);
+  fs.writeFileSync(`${tmp}/rules/policy.json`, '{"version":"9.9","owner":"Somebody Else","rules":[]}');
+  const after = integrity.report({ root: tmp, baselineFile: path.join(__dirname, '..', 'state', 'integrity.json') });
+  assert.ok(after.drifted.includes('rules/policy.json'), 'no drift detected after wiping policy.json');
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+t('a tampered audit row breaks the ledger chain', () => {
+  integrity.chainBuild();
+  const clean = integrity.chainVerify();
+  assert.ok(clean.present && clean.head_matches, 'fresh chain should verify: ' + JSON.stringify(clean));
+  const row = ledger.entries().find((e) => e.decision === 'BLOCK');
+  const original = row.decision;
+  row.decision = 'ALLOW';                        // simulate someone rewriting history
+  const dirty = integrity.chainVerify();
+  row.decision = original;
+  assert.ok(dirty.broken, 'chain still verified after an edited row \u2014 the check is decorative');
+  assert.strictEqual(dirty.broken.id, row.id);
+});
+t('changing the rulebook changes the decision (policy.json is the source)', () => {
+  const before = gate.evaluate({ actor: 'ops', action: 'pay_supplier', supplier: 'Jia Wen', amount: 1200, invoice: 'QP-88812', files: ['finance/invoice_2026-037_quickprint.md'], scope: ['finance/invoice_2026-037_quickprint.md'] }).decision;
+  assert.strictEqual(before, 'HOLD');
+  const tmp = require('os').tmpdir() + '/it-policy-' + Date.now();
+  require('child_process').execSync(`mkdir -p ${tmp}/rules && cp rules/*.json ${tmp}/rules/`);
+  const pl = JSON.parse(fs.readFileSync(`${tmp}/rules/policy.json`, 'utf8'));
+  pl.rules.find((x) => x.id === 'R10').condition = 'an invoice already received, under SGD 10,000';
+  fs.writeFileSync(`${tmp}/rules/policy.json`, JSON.stringify(pl, null, 1));
+  const drift = integrity.report({ root: tmp, baselineFile: path.join(__dirname, '..', 'state', 'integrity.json') });
+  assert.ok(drift.drifted.includes('rules/policy.json'), 'drift of the edited copy should be reported');
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -6,8 +6,9 @@
 'use strict';
 
 const { corpus } = require('./corpus');
+const integrity = require('./integrity');
 const classify = require('./classify');
-const { RANK, LABEL, OUTCOME, byId, levelOf, atLeast, scanText, SHORT_WHY, TAIL } = require('./rules');
+const { RANK, LABEL, OUTCOME, byId, levelOf, atLeast, scanText, SHORT_WHY, TAIL, LIMITS } = require('./rules');
 
 classify.setCorpus(corpus());
 
@@ -267,14 +268,15 @@ function evaluate(input) {
   if (action === pay) {
     const amt = Number(input.amount || 0);
     const rec = c.payables.find((p) => input.invoice && (p.number.includes(String(input.invoice)) || norm(p.file).includes(norm(input.invoice))) && /unpaid/i.test(p.status));
-    if (rec && amt < 1000) {
-      hits.push(ruleHit('R10', `SGD ${amt.toLocaleString()} against invoice ${rec.number}, already received. Inside the standing authority ${c.owner} gave.`, [ev(rec.file, rec.number + ' \u00b7 ' + rec.status, 'the invoice that authorises the payment')], { whyShort: `it matched a received invoice under SGD 1,000` }));
+    const standing = LIMITS.payStanding;
+    if (rec && amt < standing) {
+      hits.push(ruleHit('R10', `SGD ${amt.toLocaleString()} against invoice ${rec.number}, already received. Inside the standing authority ${c.owner} wrote into R10 (under SGD ${standing.toLocaleString()}).`, [ev(rec.file, rec.number + ' \u00b7 ' + rec.status, 'the invoice that authorises the payment')], { whyShort: `it matched a received invoice under SGD 1,000` }));
     } else if (!rec) {
       stake.push({ value: amt, why: `a supplier payment of SGD ${amt.toLocaleString()} with no invoice on file behind it` });
       hits.push(ruleHit('R11', `SGD ${amt.toLocaleString()} to ${input.supplier || 'a supplier'} with no matching invoice on file${amt >= 1000 ? `, and over the SGD 1,000 line` : ''}.`, [
         ev('finance/invoice_2026-037_quickprint.md', 'Invoice QP-88812, 2 Nov 2026', 'the only supplier invoice the studio holds, and it is not this one'),
         ev('admin/supplier_list.md', 'Jia Wen (freelance) \u00b7 Per job, SGD 80/hr', 'who is being paid, and on what terms'),
-      ], { whyShort: `this payment of SGD ${amt.toLocaleString()} has no invoice on file behind it` }));
+      ], { whyShort: `this payment of SGD ${amt.toLocaleString()} has no invoice on file behind it${amt >= standing ? `, and is over the SGD ${standing.toLocaleString()} standing limit` : ''}` }));
     } else {
       stake.push({ value: amt, why: 'a supplier payment above the SGD 1,000 standing limit' });
       hits.push(ruleHit('R11', `SGD ${amt.toLocaleString()} is over the SGD 1,000 line, even with invoice ${rec.number} in hand.`, [ev(rec.file, rec.number, 'invoice on file')], { whyShort: `this payment is over the SGD 1,000 your policy allows without asking` }));
@@ -401,6 +403,7 @@ function evaluate(input) {
     },
     decision,
     activity: activityFor(input, decision),
+    policy_sha: integrity.policyTag(),
     policyWords: decision === 'BLOCK' ? 'NEVER' : decision === 'HOLD' ? 'APPROVE' : 'ALLOW',
     outcome: OUTCOME[decision === 'BLOCK' ? 'NEVER' : decision === 'HOLD' ? 'APPROVE' : 'ALLOW'],
     rules: hits,

@@ -71,6 +71,11 @@ async function api(req, res, url) {
     if (p === '/api/log') return send(res, 200, { entries: ledger.entries().slice().reverse(), queue: ledger.queue() });
     if (p === '/api/files') return send(res, 200, { index: fileIndex, workers: AGENTS });
     if (p === '/api/scenarios') return send(res, 200, { board: getBoard(true), canary: scenarios.canary(), scripts: scenarios.buildScenarios() });
+    if (p === '/api/integrity') {
+      const { report, chainVerify, policyTag } = require('./engine/integrity');
+      const { LIMITS } = require('./engine/rules');
+      return send(res, 200, { report: report(), chain: chainVerify(), policy_sha: policyTag(), limits: LIMITS });
+    }
     if (p === '/api/policy') return send(res, 200, { policy: policyRaw, taxonomy, agents: AGENTS, tools: gate.EXTERNAL_TOOLS, floors: c.floors, priceList: c.priceList, receivables: c.receivables, payables: c.payables, clients: c.clients.map((x) => ({ name: x.name, email: x.email })), suppliers: c.suppliers.map((s) => s.name) });
     if (p === '/api/day') return send(res, 200, { kit: KIT_SCRIPTS, routine: ROUTINE, ours: OURS });
     if (p === '/api/voice') return send(res, 200, voice.status());
@@ -211,6 +216,9 @@ const server = http.createServer(async (req, res) => {
 ledger.init();
 if (!ledger.entries().length) seedNight();
 getBoard();
+// build the audit chain after the night is seeded, so the chain always covers every row
+try { require('./engine/integrity').chainBuild(); }
+catch (e) { console.log('[integrity] chain build failed:', String(e.message || e).slice(0, 90)); }
 
 // A cold clone has no wording cache and a judge has pressed nothing yet. If a model
 // credential exists, generate once in the background so the first screen shows the real

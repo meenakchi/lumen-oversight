@@ -1,0 +1,12 @@
+{
+ "recorded_at": "2026-11-21T07:47:56.003Z",
+ "recorded_by": "owner",
+ "hashes": {
+  "rules/policy.json": "1f2a60de0886e5c115fba2ae7fbdecd5660f0c0a6058ac6306c5c5d20cf2c598",
+  "rules/taxonomy.json": "26d7efc672bdc238145baa613068a6338e9e13bfb86eb61db637e6ca374f53d3",
+  "rules/scenarios.json": "8c02914096bc2cb67093e717d5054b402468ad3675d39ccde5ca45e9e4f53788",
+  "rules/ground_truth_labels.json": "b6c9c8b54e1ccb16e6d3bf9162dc4a91861c427a9b6723bfb212966e92d042ed"
+ },
+ "git_head": null,
+ "note": "Baseline for the kit files this oversight layer enforces. If a hash changes, the Rules tab goes red and every new ledger row carries the new short hash, so a rule edit can never masquerade as history. This is drift detection against a recorded anchor, not a cryptographic guarantee: anyone with write access to this disk could re-record. The anchor that is hard to quietly change is the one published in the git commit — state/integrity.json is committed, so the diff is the tamper alarm."
+}

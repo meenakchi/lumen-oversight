@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node tests/run.js"
+    "test": "node tests/run.js",
+    "integrity": "node scripts/integrity.js",
+    "integrity:record": "node scripts/integrity.js --record",
+    "integrity:chain": "node scripts/integrity-chain.js"
   },
   "engines": {
     "node": ">=20"

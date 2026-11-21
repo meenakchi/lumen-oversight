@@ -30,6 +30,31 @@ jobs:
           echo "a CI host has no model key, as expected:"
           curl -fsS http://localhost:3999/api/voice | head -c 200
           kill $pid
+      - name: rulebook integrity (policy.json is the source; drift is caught)
+        run: |
+          node scripts/integrity.js
+          node -e '
+            const fs=require("fs"), cp=require("child_process"), os=require("os"), path=require("path");
+            const integ=require("./engine/integrity");
+            // a live decision must carry the rulebook hash it came from
+            const gate=require("./engine/gate");
+            const rec=gate.evaluate({actor:"ops",action:"pay_supplier",supplier:"Jia Wen",amount:1200,invoice:"QP-88812",
+              files:["finance/invoice_2026-037_quickprint.md"],scope:["finance/invoice_2026-037_quickprint.md"]});
+            if (!rec.policy_sha) { console.error("decision carries no rulebook hash"); process.exit(1); }
+            if (rec.decision !== "HOLD") { console.error("expected HOLD under the committed rulebook, got", rec.decision); process.exit(1); }
+            // same code, edited rulebook: drift must be reported, not absorbed
+            const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"drift-"));
+            cp.execSync(`mkdir -p ${tmp}/rules && cp rules/*.json ${tmp}/rules/`);
+            const pl=JSON.parse(fs.readFileSync(tmp+"/rules/policy.json","utf8"));
+            pl.rules.find(x=>x.id==="R10").condition="an invoice already received, under SGD 99,999";
+            fs.writeFileSync(tmp+"/rules/policy.json", JSON.stringify(pl,null,1));
+            const r=integ.report({root:tmp, baselineFile:path.resolve("state/integrity.json")});
+            if (!r.drifted.includes("rules/policy.json")) { console.error("edited rulebook did not register as drift"); process.exit(1); }
+            const lim=require("./engine/rules").LIMITS.payStanding;
+            if (lim !== 1000) { console.error("engine limit should still read the committed file, got", lim); process.exit(1); }
+            fs.rmSync(tmp,{recursive:true,force:true});
+            console.log("integrity: hash on decisions + drift on edited rulebook");
+          '
       - name: the brief must be honest about which voice wrote it
         run: |
           PORT=3999 node server.js & pid=$!
