@@ -16,6 +16,7 @@ const scenarios = require('./engine/scenarios');
 const briefing = require('./engine/briefing');
 const ledger = require('./engine/ledger');
 const { seedNight } = require('./engine/seed');
+const voice = require('./engine/voice');
 const { AGENTS, KIT_SCRIPTS, ROUTINE, OURS } = require('./engine/day');
 
 const { policyRaw, taxonomy, LABEL } = rules;
@@ -63,14 +64,21 @@ async function api(req, res, url) {
         queueOpen: ledger.queue().filter((q) => q.status === 'waiting').length,
         board: { points: b.points, max: b.max, kit: b.kit, kitMax: b.kitMax, ours: b.custom, oursMax: b.customMax },
         canary: scenarios.canary(),
+        schedule: (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'schedule.json'), 'utf8')); } catch (e) { return null; } })(),
       });
     }
-    if (p === '/api/brief') { const g = briefing.generate(); return send(res, 200, { brief: g, text: briefing.plain(g) }); }
+    if (p === '/api/brief') { const g = voice.apply(briefing.generate()); return send(res, 200, { brief: g, text: briefing.plain(g, g.voice) }); }
     if (p === '/api/log') return send(res, 200, { entries: ledger.entries().slice().reverse(), queue: ledger.queue() });
     if (p === '/api/files') return send(res, 200, { index: fileIndex, workers: AGENTS });
     if (p === '/api/scenarios') return send(res, 200, { board: getBoard(true), canary: scenarios.canary(), scripts: scenarios.buildScenarios() });
     if (p === '/api/policy') return send(res, 200, { policy: policyRaw, taxonomy, agents: AGENTS, tools: gate.EXTERNAL_TOOLS, floors: c.floors, priceList: c.priceList, receivables: c.receivables, payables: c.payables, clients: c.clients.map((x) => ({ name: x.name, email: x.email })), suppliers: c.suppliers.map((s) => s.name) });
     if (p === '/api/day') return send(res, 200, { kit: KIT_SCRIPTS, routine: ROUTINE, ours: OURS });
+    if (p === '/api/voice') return send(res, 200, voice.status());
+    if (p === '/api/voice/adversarial') {
+      let runs = [];
+      try { runs = JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'adversarial.json'), 'utf8')).runs; } catch (e) { runs = []; }
+      return send(res, 200, { runs, tally: voice.tally() });
+    }
     if (p.startsWith('/api/file')) {
       const rel = url.searchParams.get('path');
       const f = c.byPath.get(rel);
@@ -110,21 +118,69 @@ async function api(req, res, url) {
     return send(res, 200, { run: scenarios.replay(s) });
   }
 
+
+  if (req.method === 'POST' && p === '/api/voice/adversarial') {
+    const body = await readBody(req);
+    const b = briefing.generate();
+    const cand = b.sections.filter((s) => s.key !== 'allowed').flatMap((s) => s.items)
+      .find((i) => i.stake && i.stake.length) || b.items[0];
+    const fact = voice.factsFor(cand);
+    try {
+      const run = await voice.adversarial(fact, body.mode);
+      const advFile = path.join(__dirname, 'state', 'adversarial.json');
+      voice.tally(run);
+      let prev = [];
+      try { prev = JSON.parse(fs.readFileSync(advFile, 'utf8')).runs || []; } catch (e) { prev = []; }   // first run: nothing to read yet
+      try {
+        fs.mkdirSync(path.dirname(advFile), { recursive: true });
+        fs.writeFileSync(advFile, JSON.stringify({ runs: [run].concat(prev).slice(0, 12) }, null, 1));
+      } catch (e) { console.error('adversarial log not written:', e.message); }
+      return send(res, 200, { run, fact: { id: cand.id, allowed: fact.allowed_numbers, stake: cand.stake, files: (cand.files || []).map((f) => f.path) } });
+    } catch (e) {
+      const msg = String(e.message || e);
+      const noCred = /no model credential/i.test(msg);
+      return send(res, noCred ? 503 : 502, { error: msg, mode: noCred ? 'unavailable' : 'failed', hint: noCred ? 'the guard still runs on every generated sentence; there is simply no model to test in this environment' : null });
+    }
+  }
+
+  if (req.method === 'POST' && p === '/api/voice/refresh') {
+    const body = await readBody(req);
+    const b = briefing.generate();
+    const v = await voice.refresh(b, Boolean(body.force));
+    return send(res, v.error ? 502 : 200, { voice: v, brief: voice.apply(briefing.generate()) });
+  }
+
   if (p === '/api/night/run') {
     const played = seedNight();
-    return send(res, 200, { played: played.length, brief: briefing.generate() });
+    return send(res, 200, { played: played.length, brief: voice.apply(briefing.generate()) });
   }
 
   return send(res, 404, { error: 'no such endpoint', got: p });
 }
 
-function serve(res, url) {
+// Static front end. GET/HEAD only: any other method is answered by api() above,
+// so a POST that misses an endpoint says "no such endpoint" rather than
+// silently serving index.html and looking like it worked.
+// Stamp the two front-end assets with their build time, so a returning owner never
+// runs yesterday's app.js out of a browser cache.
+function assetVersion(file) {
+  try { return Math.floor(fs.statSync(path.join(PUB, file)).mtimeMs / 1000).toString(36); } catch (e) { return 'dev'; }
+}
+
+function serve(req, res, url) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed', got: url.pathname });
   const rel = url.pathname === '/' ? '/index.html' : path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, '');
   const file = path.join(PUB, rel);
   if (!file.startsWith(PUB)) { res.writeHead(403); return res.end('forbidden'); }
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
     res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
+    if (/\.html$/.test(file)) {
+      const html = buf.toString('utf8')
+        .replace('/app.js', `/app.js?v=${assetVersion('app.js')}`)
+        .replace('/styles.css', `/styles.css?v=${assetVersion('styles.css')}`);
+      return res.end(html);
+    }
     res.end(buf);
   });
 }
@@ -133,7 +189,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
     if (url.pathname.startsWith('/api/') || url.pathname === '/health') return await api(req, res, url);
-    return serve(res, url);
+    return serve(req, res, url);
   } catch (e) {
     console.error(e);
     return send(res, 500, { error: String((e && e.message) || e) });

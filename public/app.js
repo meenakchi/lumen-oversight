@@ -19,9 +19,11 @@ function toast(msg) {
 }
 
 const STATE = {
-  brief: null, log: [], queue: [], scn: null, policy: null, files: null, state: null,
-  logFilter: 'all', openScn: new Set(),
+  brief: null, log: [], queue: [], scn: null, policy: null, files: null, state: null, voice: null,
+  wording: 'generated', logFilter: 'all', openScn: new Set(),
 };
+const RAWSET = new Set();
+const WORDS = (i) => (STATE.wording === 'generated' && i.gen && !RAWSET.has(i.id) ? i.gen : null);
 const TONE = { ALLOW: 'allow', HOLD: 'hold', BLOCK: 'block' };
 const OUTCOME_TEXT = { ALLOW: 'ALLOWED', HOLD: 'HELD FOR YOU', BLOCK: 'STOPPED' };
 const ACTION_LABEL = {
@@ -49,6 +51,8 @@ function fileChips(files, max) {
 /* ------------------------------------------------------------------ brief */
 function renderBrief() {
   const b = STATE.brief;
+  const v = b.voice || {};
+  const chip = (txt, cls) => `<span class="chipword ${cls || ''}">${txt}</span>`;
   $('[data-day]').textContent = `${b.day} · ${b.clock} · for ${b.owner}`;
 
   const belt = $('[data-belt]');
@@ -61,6 +65,13 @@ function renderBrief() {
       <div class="dateplate"><span>Lumen Studio \u00b7 one designer, five agents</span><span>\u00b7</span><span>${b.counts.actions} decisions between 21:00 and 06:00</span></div>
       <h2>${esc(headlineFor(b))}</h2>
       <p class="lede">${esc(b.lede)}</p>
+      <div class="voiceline" data-voiceline>
+        <span class="lead">Wording</span>
+        ${v.used ? chip(`wording: ${v.used}/${v.total} sentences phrased by ${esc(v.model)} on ${v.calls} call${v.calls === 1 ? '' : 's'} \u00b7 ${esc((v.tokens || {}).pt || 0)}+${esc((v.tokens || {}).ct || 0)} tokens`, 'ok') : chip('wording: the oversight agent\u2019s own deterministic sentences', '')}
+        ${v.rejected ? chip(`${v.rejected} generated sentence${v.rejected === 1 ? '' : 's'} thrown away by the fabrication guard \u2014 deterministic wording published`, 'warn') : v.used ? chip('fabrication guard: no invented figures, no false leak claims, no unsupported consequences', 'ok') : ''}
+        ${v.enabled === false ? chip('model unavailable in this environment \u2014 nothing was faked', 'warn') : ''}
+        <button class="ghost" data-act="rephrase" style="padding:2px 8px">Rephrase with QwenWork</button>
+      </div>
       <div class="next">
         <span class="lead">Start here</span>
         ${b.counts.waiting ? `<button class="go" data-jump="waiting">${b.counts.waiting} need${b.counts.waiting === 1 ? 's' : ''} your yes</button>` : ''}
@@ -82,6 +93,7 @@ function renderBrief() {
     : `<span class="pill">records that left the studio: 0</span>`;
 
   $('#sections').innerHTML = b.sections.map(renderSection).join('');
+  decorateProvenance(b);
   $$('#sections .brief-item').forEach((node, i) => {
     node.style.animationDelay = (i % 8) * 45 + 'ms';
     node.classList.add('reveal');
@@ -103,9 +115,10 @@ function letter(b) {
   const spark = pick('stopped', ['R15']), floor = pick('stopped', ['R08']), lying = pick('stopped', ['R18']);
   const floors = (STATE.policy && STATE.policy.floors) || { 'Greenstep Tuition': 6500 };
   const P = [];
+  const say = (i, fb) => { const g = WORDS(i); return g && g.why ? g.why : fb; };
   if (spark) P.push(`<p>${esc(spark.agent)} treated a vendor's email as if it came from you. It tried to hand over ${esc(shortName(spark.args.file || ''))} \u2014 the names, emails and phone numbers of everyone in your client list \u2014 to an outside tool that keeps whatever it is given. Stopped. There is no button that releases this one, because you wrote never.</p>`);
-  if (floor) P.push(`<p>${esc(floor.agent)} offered a price under the floor your own notes set for ${esc(floorClient(floor) || 'that client')} (${esc(floor.money || 'the gap')} short). Stopped, and the draft is kept in case you want to counter at the floor instead.</p>`);
-  if (lying) P.push(`<p>${esc(lying.agent)} wrote a client letter quoting figures that appear in no file you hold. The made-up numbers and the real ones sit side by side in the trail, so you can see exactly where the agent went wrong.</p>`);
+  if (floor) P.push(`<p>${esc(say(floor, `Sales offered ${esc(floor.args && floor.args.body ? 'a price under your floor' : 'a lower price')} \u2014 ${esc(floor.money || 'the gap')} short of the floor. Stopped, and the draft is kept in case you want to counter at the floor instead.`))}</p>`);
+  if (lying) P.push(`<p>${esc(say(lying, `${lying.agent} wrote a client letter quoting figures that appear in no file you hold. The made-up numbers and the real ones sit side by side in the trail, so you can see exactly where the agent went wrong.`))}</p>`);
   if (wait.length) P.push(`<p><span class="stampword">HELD</span> ${wait.length} ${wait.length === 1 ? 'item is' : 'items are'} waiting: ${wait.slice(0, 3).map((i) => esc(shortTask(i))).join('; ')}. Nothing went out, and each one is a single tap.</p>`);
   if (res.length) P.push(`<p>You already settled ${res.length} of them ${res.map((i) => i.queueStatus).join(' / ').toLowerCase()} while away; the trail kept the original hold, the tap and the time.</p>`);
   if (quiet.length) {
@@ -153,12 +166,16 @@ function shortTask(i) {
 function briefItemHTML(i, tone) {
   const rules = (i.rules || []).map((r) => `<a class="pill rule-chip" data-rule="${esc(r.id)}">${esc(r.id)} ${esc(r.decision)}</a>`).join('');
   const files = fileChips(i.files);
-  return `<article class="brief-item${i.firstToDecide ? ' first' : ''}" data-tone="${tone}" data-id="${esc(i.id)}">
+  const g = WORDS(i);
+  const headline = g ? g.headline : i.headline;
+  const whyLine = g ? g.why : shortWhyOf(i);
+  const rec = g && g.recommend ? `<div class="recommend">${esc(g.recommend)}</div>` : '';
+  return `<article class="brief-item${i.firstToDecide ? ' first' : ''}${g ? ' aiword' : ''}" data-tone="${tone}" data-id="${esc(i.id)}">
     ${i.firstToDecide ? '<span class="startline">Start here \u2014 one tap, and it is off your plate</span>' : ''}
     <div class="bi-head">
       <div>
-        <div class="bi-what"><span class="stamp" data-decision="${esc(i.decision)}">${esc(OUTCOME_TEXT[i.decision])}</span>${esc(i.headline)}</div>
-        <div class="bi-why">${esc(shortWhyOf(i))}</div>
+        <div class="bi-what"><span class="stamp" data-decision="${esc(i.decision)}">${esc(OUTCOME_TEXT[i.decision])}</span>${esc(headline)}</div>
+        <div class="bi-why">${esc(whyLine)}${g && g.recommend ? ` ${esc(g.recommend)}` : ''}</div>
         <div class="bi-meta">
           <span class="pill">${esc(i.clock || '')}</span><span class="pill">${esc(i.agent)}</span>
           <span class="pill">${esc(ACTION_LABEL[i.action] || i.action)}</span>
@@ -166,7 +183,7 @@ function briefItemHTML(i, tone) {
           ${files}
         </div>
         ${i.flags && i.flags.length ? `<div class="bi-flags">${i.flags.map((f) => `<div class="flag"><b>${esc(f.id)}</b>${esc(f.message)}</div>`).join('')}</div>` : ''}
-        ${i.recommendation && tone === 'hold' ? `<div class="recommend">${esc(i.recommendation)}</div>` : ''}
+        ${(g && g.recommend) ? rec : (i.recommendation && tone === 'hold' ? `<div class="recommend">${esc(i.recommendation)}</div>` : '')}
         <div class="bi-actions">
           ${tone === 'hold' ? `<button class="go" data-release="${esc(i.id)}">Yes, send it</button><button class="ghost" data-decline="${esc(i.id)}">No, kill it</button>` : ''}
           <button class="ghost" data-evidence="${esc(i.id)}">Evidence &amp; reasoning</button>
@@ -184,8 +201,53 @@ function shortWhyOf(i) {
   return hit ? hit.why : i.why || '';
 }
 
+/* Provenance is added after rendering, from the same objects the cards came
+   from, so the tag can never claim authorship the item does not have: no gen
+   object, no "model wording" label. */
+function decorateProvenance(b) {
+  for (const sec of b.sections) for (const i of sec.items) {
+    const card = document.querySelector(`.brief-item[data-id="${i.id}"]`);
+    if (!card) continue;
+    const g = WORDS(i);
+    const line = el('div', 'provline');
+    if (g) {
+      const n = (g.guard.numbers_found || []).length;
+      line.innerHTML = `<span class="provtion gen">model wording \u00b7 ${n} figure${n === 1 ? '' : 's'} cross-checked against the audited facts \u00b7 guard passed</span>
+        <button class="ghost swap" data-swap="${esc(i.id)}">Show the sentence the rules wrote</button>`;
+    } else if (i.gen) {
+      line.innerHTML = `<span class="provtion">rule-engine wording \u2014 you asked for the model sentence to be swapped out</span>
+        <button class="ghost swap" data-swap="${esc(i.id)}">Use the model wording again</button>`;
+    } else {
+      line.innerHTML = `<span class="provtion">written by the rule engine \u00b7 no model call for this action</span>`;
+    }
+    const actions = card.querySelector('.bi-actions');
+    if (actions) actions.after(line);
+    const tag = card.querySelector('[data-raw]');
+    if (tag) tag.remove();
+  }
+  $$('.swap').forEach((btn) => (btn.onclick = () => {
+    const id = btn.dataset.swap;
+    RAWSET.has(id) ? RAWSET.delete(id) : RAWSET.add(id);
+    renderBrief();
+    const back = document.querySelector(`.brief-item[data-id="${id}"]`);
+    if (back) back.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    toast(RAWSET.has(id) ? 'Rule-engine sentence: same facts, no model involved.' : 'Model wording back on, numbers audited again.');
+  }));
+}
+
 function wireItems() {
   $$('[data-open-text]').forEach((b) => (b.onclick = openBriefText));
+  const rp = $('[data-act=rephrase]');
+  if (rp) rp.onclick = async () => {
+    rp.disabled = true; rp.textContent = 'asking the model\u2026';
+    try {
+      const out = await api('/api/voice/refresh', { force: true });
+      STATE.brief = out.brief;
+      renderBrief();
+      const v = out.voice || {};
+      toast(v.error ? `Model call failed: ${v.error}` : `Rephrased ${Object.keys(v.phrases || {}).length} sentences, ${v.rejections ? v.rejections.length : 0} rejected by the guard.`);
+    } finally { rp.disabled = false; rp.textContent = 'Rephrase with QwenWork'; }
+  };
   $$('[data-jump]').forEach((b) => (b.onclick = () => {
     const sec = STATE.brief.sections.find((s) => s.key === b.dataset.jump);
     const node = document.querySelectorAll('#sections .section')[STATE.brief.sections.indexOf(sec)];
@@ -384,7 +446,7 @@ function openLogEntry(id) {
 }
 
 /* ------------------------------------------------------------ tab switch */
-const TABS = ['brief', 'ledger', 'lab', 'question', 'policy'];
+const TABS = ['brief', 'ledger', 'lab', 'question', 'policy', 'platform'];
 function switchTab(name, quiet) {
   if (!TABS.includes(name)) name = 'brief';
   if (!quiet && location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
@@ -395,6 +457,7 @@ function switchTab(name, quiet) {
   if (name === 'question') renderQuestion();
   if (name === 'policy' && STATE.policy) renderPolicy();
   if (name === 'policy') { renderPolicy(); }
+  if (name === 'platform') loadPlatform();
   window.scrollTo({ top: 0, behavior: 'smooth' });
   return true;
 }
@@ -556,6 +619,141 @@ function renderPolicy() {
   $$('[data-dr=body] [data-file], #panel-policy [data-file]').forEach((b) => (b.onclick = () => openFile(b.dataset.file)));
 }
 
+/* ------------------------------------------------------------- platform */
+async function loadPlatform() {
+  const [vs, adv] = await Promise.all([api('/api/voice'), api('/api/voice/adversarial')]);
+  STATE.voiceStatus = vs; STATE.adv = adv.runs || []; STATE.tally = adv.tally || null;
+  renderPlatform();
+}
+function renderPlatform() {
+  const vs = STATE.voiceStatus || {};
+  const last = vs.last || {};
+  const v = (STATE.brief || {}).voice || {};
+  const st = STATE.state || {};
+  const runs = STATE.adv || [];
+  const sc = (st.schedule || {}).tasks || [];
+  const sched = sc.length ? sc.map((t) => `<div class="adv" data-caught="true">
+      <div class="adv-head">${esc(t.when)} \u00b7 ${esc(t.status)}</div>
+      <p><b>${esc(t.what)}</b> ${esc(t.does || '')}</p>
+      <p class="hint">${esc(t.surface)} \u00b7 registered ${esc(fmtAgo(t.registered))} \u00b7 ${esc(t.first_run || '')}</p>
+      ${t.last_run ? `<details class="lastrun"><summary>what the last run delivered (${esc(t.last_run.status)}, ${esc(fmtAgo(t.last_run.at))})</summary><pre class="src">${esc(t.last_run.delivered)}</pre></details>` : ''}
+    </div>`).join('') + `<p class="hint" style="margin-top:8px">${esc((st.schedule || {}).note || '')}</p>`
+    : '<p class="hint">Nothing registered yet: the build session never created the schedules, so this screen reports the app as manual-run.</p>';
+  const caught = runs.filter((r) => r.caught).length;
+  const bag = {};
+  for (const r of runs) for (const w of r.caught_because || []) {
+    const k = w.startsWith('invented figure') ? 'invented a figure'
+      : w.includes('outside world') ? 'claimed the leak happened'
+      : w.includes('consequence') ? 'asserted an unsupported consequence'
+      : w.includes('outbound') ? 'misattributed a file to the draft' : 'other';
+    bag[k] = (bag[k] || 0) + 1;
+  }
+  const T = STATE.tally || { runs: caught, caught, by_reason: bag, invented_figures: [], breach_claims: 0 };
+  const whyBreak = Object.entries(T.by_reason || {}).sort((a, b2) => b2[1] - a[1]).map(([k, n]) => `${n} ${k}`).join(' \u00b7 ');
+
+  const numbers = [
+    { v: `${last.used || 0}/${last.total || 10}`, l: 'brief sentences phrased by the model', s: last.calls + ' calls \u00b7 ' + ((last.tokens || {}).pt || 0) + '+' + ((last.tokens || {}).ct || 0) + ' tokens' },
+    { v: String(last.rejected || 0), l: 'sentences thrown away in the current brief', s: (last.rejected ? 'deterministic wording published instead' : 'this batch stayed inside the facts \u2014 the temptation runs below are the stress test') },
+    { v: T.runs ? `${T.caught}/${T.runs}` : '\u2013', l: 'temptation sentences the guard threw away, all-time', s: whyBreak || 'the model is dared to invent a figure, and to claim the leak already happened' },
+    { v: '0', l: 'decisions made by the model', s: 'verdicts come from policy.json only' },
+  ];
+
+  $('#platformBody').innerHTML = `
+    <div class="belt" style="margin-bottom:18px">${numbers.map((n) => `<div><div class="v">${esc(n.v)}</div><div class="l">${esc(n.l)}</div><div class="s">${esc(n.s)}</div></div>`).join('')}</div>
+
+    <div class="grid2">
+      <div class="note-card">
+        <h4>What the model is allowed to do</h4>
+        <p>${last.used ? `${last.used} of ${last.total} sentences in this morning's brief were phrased by <span class="mono">${esc(vs.model)}</span>: ${last.calls} call${last.calls === 1 ? '' : 's'}, ${((last.tokens || {}).pt || 0)} prompt + ${((last.tokens || {}).ct || 0)} completion tokens, ${esc(fmtAgo(last.created))}. Each card is labelled <span class="mono">model wording</span>; press <em>Show the sentence the rules wrote</em> on any card and the identical fact, written with no model at all, takes its place. Same facts, two voices \u2014 that is the proof the model is decoration and not the decision.`
+          : `No model calls yet for this state. Press <b>Rephrase with QwenWork</b> at the top of the brief: the wording layer asks <span class="mono">${esc(vs.model)}</span> for sentences, then audits every number in them. Where there is no credential, the interface says so instead of inventing a story.`}</p>
+        <div class="tag-row">
+          <span class="pill">endpoint ${esc(vs.base ? String(vs.base).replace(/^https:\/\//, '') : 'none')}</span>
+          <span class="pill">model ${esc(vs.model)}</span>
+          <span class="pill">${esc((vs.cred || {}).source || 'no credential')}</span>
+          ${vs.cred && vs.cred.fresh ? '<span class="pill pass">token fresh</span>' : '<span class="pill fail">token stale or absent</span>'}
+        </div>
+        ${last.error ? `<p class="hint" style="color:var(--block)">last generation error: ${esc(last.error)}</p>` : ''}
+        ${vs.last && vs.last.note ? `<p class="hint">${esc(vs.last.note)}</p>` : ''}
+      </div>
+
+      <div class="note-card">
+        <h4>What the model is never allowed to do</h4>
+        <p>Decide. Allow, hold and block come from <span class="mono">rules/policy.json</span> evaluated against Lumen Studio's files \u2014 ${st.counts ? st.counts.rules : 19} rules, no model in the loop. The wording layer may choose adjectives; it may not choose a verdict, a figure, a file name or a recipient.</p>
+        <div class="tag-row">
+          <span class="pill">R18 escalates ALLOW \u2192 BLOCK deterministically</span>
+          <span class="pill">R08 has no release button</span>
+          <span class="pill">guard = set difference on audited numbers</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-card" style="margin-top:16px">
+      <h4>Try to make it lie</h4>
+      <p class="hint" style="margin-bottom:10px">The guard is a probability test, so it gets run against a model that has been <em>invited</em> to invent: the system prompt asks for vivid, specific numbers wherever they would strengthen the sentence. Whatever the model adds that is not in the audited facts is reported here and the sentence is thrown away.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <button class="go" data-act="tempt">Invite the model to invent a figure</button>
+        <span class="hint" data-temptstate>${runs.length ? `${runs.length} run${runs.length === 1 ? '' : 's'} on record, ${caught} caught` : 'no runs yet'}</span>
+        <button class="ghost" data-act="temptleak">Dare it to claim the leak happened</button>
+      </div>
+      ${runs.map((r) => `<div class="adv" data-caught="${r.caught}">
+          <div class="mono adv-head">${r.caught ? '<span class="fail">REJECTED</span>' : '<span class="pass">PASSED GUARD</span>'} \u00b7 ${esc(r.model)} \u00b7 ${esc(r.ran_at)}</div>
+          <blockquote class="draft">${esc(r.draft.headline || '')}</blockquote>
+          <p class="hint">${esc(r.verdict)}</p>
+          ${(r.caught_because || []).length ? `<p class="mono caught-why">caught because: ${r.caught_because.map(esc).join(' \u00b7 ')}</p>` : ''}
+          ${r.offenders && r.offenders.length ? `<p class="mono">invented: ${r.offenders.join(', ')} \u2014 lawful numbers were: ${(r.numbers_in_facts || []).join(', ')}</p>` : ''}
+        </div>`).join('') || '<p class="hint">Nothing run yet.</p>'}
+      ${last.rejections && last.rejections.length ? `<div style="margin-top:12px"><h4 class="mono" style="color:var(--muted)">REJECTIONS FROM THE REAL BRIEF</h4>${last.rejections.map((r) => `<p class="hint"><span class="mono">${esc(r.id)}</span> \u2014 ${esc(r.reason)}${r.offenders.length ? ': ' + r.offenders.join(', ') : ''}</p>`).join('')}</div>` : ''}
+    </div>
+
+    <div class="grid2" style="margin-top:16px">
+      <div class="note-card">
+        <h4>Two things still ahead</h4>
+        <p>Two honest gaps. The fabrication guard is a floor, not a ceiling: it proves figures were not invented, not that a sentence is well written \u2014 a human still owns the wording standard. And the morning brief is reported into QwenWork, not into Mei's inbox yet: email or DingTalk delivery is the next small piece of plumbing, not a re-architecture.</p>
+      </div>
+
+      <div class="note-card" style="margin-top:16px">
+        <h4>The platform surface this product sits on</h4>
+        <p>Five worker agents modelled against the real corpus, one gateway, one append-only ledger, one briefing, one self-test. Model calls go out through the QwenWork MaaS endpoint; the app has zero npm dependencies, so the platform \u2014 not a package manager \u2014 is the infrastructure.</p>
+        <div class="tag-row"><span class="pill">${st.counts ? st.counts.entries : 0} ledger rows</span><span class="pill">${st.counts ? st.counts.files : 27} files classified</span><span class="pill">${st.board ? st.board.points : 0}/${st.board ? st.board.max : 30} scenario points</span><span class="pill">scheduler: ${sc.length ? `${sc.length} task${sc.length === 1 ? '' : 's'} registered` : 'nothing registered'}</span></div>
+      </div>
+      <div class="note-card">
+        <h4>What runs on a timer</h4>
+        ${sched}
+      </div>
+    </div>`;
+
+  const tl = $('[data-act=temptleak]');
+  if (tl) tl.onclick = () => tempt('leak', tl);
+  const t = $('[data-act=tempt]');
+  if (t) t.onclick = () => tempt('numbers', t);
+}
+
+async function tempt(mode, btn) {
+  const state = $('[data-temptstate]');
+  $$('[data-act^=tempt]').forEach((b) => (b.disabled = true));
+  const old = btn.textContent; btn.textContent = 'waiting for the model\u2026';
+  try {
+    await api('/api/voice/adversarial', { mode });
+    await loadPlatform();
+    const rs = STATE.adv || [];
+    const newest = rs[0];
+    toast(newest && newest.caught ? `caught: ${(newest.caught_because || ['something not in the facts'])[0]}` : 'this attempt stayed inside the facts \u2014 run it again');
+  } catch (e) {
+    if (state) state.textContent = 'call failed: ' + e.message;
+  } finally {
+    $$('[data-act^=tempt]').forEach((b) => (b.disabled = false));
+    btn.textContent = old;
+  }
+}
+
+function fmtAgo(iso) {
+  if (!iso) return 'never';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 90) return 'just now';
+  if (s < 5400) return Math.round(s / 60) + ' min ago';
+  return Math.round(s / 3600) + ' h ago';
+}
+
 function highlightRule(id) {
   $$('#rulesTable tr.hitrow').forEach((n) => n.classList.remove('hitrow'));
   if (!id) return;
@@ -585,6 +783,9 @@ async function boot() {
   renderQuestion();
   if (location.hash) switchTab(location.hash.slice(1), true);
   $('[data-act=ask]').onclick = () => { switchTab('question'); renderQuestion(); };
+  const wt = $('#wordToggle');
+  if (wt) wt.onchange = () => { STATE.wording = wt.checked ? 'generated' : 'deterministic'; renderBrief(); };
+  rephraseIfCheap();
   $('[data-act=night]').onclick = async (e) => {
     e.target.disabled = true; e.target.textContent = 'replaying\u2026';
     await api('/api/night/run', {});
@@ -599,6 +800,20 @@ async function boot() {
   $$('.letter [data-open-text]').forEach((b) => (b.onclick = openBriefText));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
   $$('[data-act=closeDrawer]').forEach((n) => (n.onclick = closeDrawer));
+}
+
+async function rephraseIfCheap() {
+  const v = (STATE.brief || {}).voice || {};
+  if (v.used || v.enabled === false) return;
+  await new Promise((r) => setTimeout(r, 3200));
+  const btn = $('[data-act=rephrase]');
+  if (btn) { btn.disabled = true; btn.textContent = 'rephrasing\u2026'; }
+  try {
+    const out = await api('/api/voice/refresh', {});
+    if (out.brief) { STATE.brief = out.brief; renderBrief(); }
+    const nv = out.voice || {};
+    toast(nv.error ? `phrasing deferred: ${nv.error}` : `${Object.keys(nv.phrases || {}).length} sentences rephrased by ${nv.model}\u00b7${(nv.rejections || []).length} rejected by the guard`);
+  } catch (e) { if (btn) btn.textContent = 'Rephrase with QwenWork'; }
 }
 
 async function openBriefText() {

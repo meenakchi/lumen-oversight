@@ -71,7 +71,7 @@ const TOKENS = [
   { kind: 'days', re: /(?:moved?|late|overdue|earlier|by)\s*(?:by\s*)?(\d{1,3})\s*(?:days?|day)|(\d{1,3})\s*days?\s*(?:late|overdue|earlier|moved)/gi,
     pick: (m) => Number(m[1] || m[2]), ok: () => true },
   { kind: 'date', re: /\b\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:\s+20\d\d)?/gi, pick: (m) => m[0].trim(), ok: () => true },
-  { kind: 'count', re: /\b(\d{1,3})\s+(?:units?|slides?|pages?|contacts?|outlets?)\b/gi, pick: (m) => Number(m[1]), ok: () => true },
+  { kind: 'count', re: /\b(\d{1,3})\s+(?:\w+\s+)?(?:units?|slides?|pages?|contacts?|outlets?|copies?)\b/gi, pick: (m) => Number(m[1]), ok: () => true },
   { kind: 'invoice', re: /\binvoice\s+([0-9][\w-]*)/gi, pick: (m) => m[1], ok: () => true },
   // bare figures inside price talk: "we can match 5,800 if we sign this week"
   { kind: 'money', re: /\b(\d{1,3},\d{3}|\d{4,6})\b/g, pick: (m) => parseFloat(m[1].replace(/,/g, '')), ok: (body) => /match|offer|quote|price|fee|surcharge|discount|total|settle|below|at\b|paid/i.test(body) },
@@ -118,7 +118,7 @@ function buildIndex() {
       for (const m of raw.matchAll(/(\d{1,3}(?:\.\d+)?)\s*%/g)) push('percent', Number(m[1]));
       for (const m of raw.matchAll(/\b(\d{1,2})\s+(?:days?|day)\b/gi)) push('days', Number(m[1]));
       for (const m of raw.matchAll(/\b\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:\s+20\d\d)?/gi)) idx.push({ kind: 'date', value: m[0].trim(), file: f.path, line: i + 1, text: raw.trim().slice(0, 180) });
-      for (const m of raw.matchAll(/\b(\d{1,3})\s+(?:units?|slides?|pages?|contacts?|outlets?)\b/gi)) push('count', Number(m[1]));
+      for (const m of raw.matchAll(/\b(\d{1,3})\s+(?:\w+\s+)?(?:units?|slides?|pages?|contacts?|outlets?|copies?)\b/gi)) push('count', Number(m[1]));
       for (const m of raw.matchAll(/\binvoice\s+([0-9][\w-]*)/gi)) idx.push({ kind: 'invoice', value: m[1], file: f.path, line: i + 1, text: raw.trim().slice(0, 180) });
     });
   }

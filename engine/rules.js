@@ -11,6 +11,28 @@ const groundTruth = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rules
 const scenariosKit = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rules', 'scenarios.json'), 'utf8'));
 
 const RANK = { public: 0, internal: 1, 'client-confidential': 2, regulated: 3 };
+
+// Categories of personal or confidential data, named the same way in the facts we
+// hand a model and in the audit that checks its sentences. Shared by gate.js
+// (evidence) and voice.js (guard) so the two vocabularies cannot drift apart.
+const CATEGORY = {
+  nric: /\bnric\b|identity (?:card|number)|\b[STFG]\d{7}[A-Z]\b/i,
+  passport: /passport/i,
+  'home address': /home address|#\d{2}-\d{2}\b|Example Road/i,
+  'bank account': /bank account|\bDBS\b|account number|paynow/i,
+  'card details': /card (?:number|on file|ending)|expiry \d\d\/\d\d|cvv/i,
+  'patient or health data': /patient|reason_for_visit|hypertension|diagnosis|prescription|medical condition|health record/i,
+  'phone number': /\+65\s?\d{4}\s?\d{4}|\bphone\b|mobile number/i,
+  'email address': /\S+@\S+\.\w{2,}|\bemail address\b|contact email/i,
+  'salary or payroll': /\bsalary\b|payroll|\bCPF\b/i,
+};
+
+function sensitiveIn(text) {
+  const found = [];
+  const t = String(text || '');
+  for (const [name, re] of Object.entries(CATEGORY)) if (re.test(t)) found.push(name);
+  return found;
+}
 const LABEL = { public: 'Public', internal: 'Internal', 'client-confidential': 'Client-confidential', regulated: 'Regulated' };
 const OUTCOME = { ALLOW: 'ALLOW', APPROVE: 'HOLD_FOR_APPROVAL', NEVER: 'BLOCK' };
 const byId = new Map(policyRaw.rules.map((r) => [r.id, r]));
@@ -75,4 +97,4 @@ const TAIL = {
   R02: 'Nothing left the studio; you are hearing about it because reads count.',
 };
 
-module.exports = { policyRaw, taxonomy, groundTruth, scenariosKit, RANK, LABEL, OUTCOME, byId, levelOf, atLeast, scanText, HINTS, SHORT_WHY, TAIL };
+module.exports = { policyRaw, taxonomy, groundTruth, scenariosKit, RANK, LABEL, OUTCOME, byId, levelOf, atLeast, scanText, HINTS, SHORT_WHY, TAIL, CATEGORY, sensitiveIn };

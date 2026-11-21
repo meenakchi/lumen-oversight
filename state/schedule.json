@@ -1,0 +1,32 @@
+{
+ "note": "Registered from the build session. Direction of control matters: the QwenWork scheduler starts a session, that session runs this app and reads its own report back. The app never calls the scheduler and cannot edit these tasks. Times are shown the way the owner would say them; the real schedule lives in QwenWork.",
+ "tasks": [
+  {
+   "name": "Nightly oversight self-test - Lumen Studio",
+   "when": "Nightly at 02:00 SGT",
+   "what": "The oversight layer tests itself",
+   "does": "runs all ten rogue-agent scenarios plus the canary and reports any regression as an alarm",
+   "status": "active",
+   "registered": "2026-11-20T15:50:24.628595Z",
+   "surface": "QwenWork scheduler, cloud: no compute instance needed",
+   "first_run": "tonight 02:00, then every night",
+   "last_run": null
+  },
+  {
+   "name": "Morning brief - Lumen Studio oversight",
+   "when": "Weekdays at 08:05 SGT",
+   "what": "The morning brief, regenerated and read back to the owner before she opens the app",
+   "does": "replays the night, regenerates the wording, audits every figure, reports the six lines",
+   "status": "active",
+   "registered": "2026-11-20T15:50:07.453293Z",
+   "surface": "QwenWork scheduler, cloud: no compute instance needed",
+   "last_run": {
+    "at": "2026-11-20T15:51:24Z",
+    "status": "completed",
+    "delivered": "The app started in the scheduled session and answered on port 3000; replay, refresh and read were all called.\nDelivered to the owner, six lines:\n1. While you slept, nothing went out unchecked and nothing the agents did was irreversible.\n2. Actions stopped before they could leave the studio: 4.\n3. Waiting for your decision: 4 drafts.\n4. Money that did not move: SGD 10,660 in invoices and price floors.\n5. Wording written by the model this run: yes (qwen3.8-flash, 10 sentences, fresh).\n6. Every figure then re-checked against the audited facts: yes, 0 rejections; self-test 30/30."
+   },
+   "first_run": "tomorrow 08:05, then every weekday"
+  }
+ ],
+ "verify": "QwenWork → Automations: two active tasks named 'Morning brief — Lumen Studio oversight' and 'Nightly oversight self-test — Lumen Studio'."
+}

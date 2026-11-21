@@ -59,6 +59,11 @@ function item(rec, s) {
     notes: rec.notes,
     trace: rec.trace,
     claims: rec.claims,
+    scopeOutside: ((rec.scope || {}).outside || []).length,
+    scopeOutsideRegulated: ((rec.scope || {}).regulatedReads || []).length,
+    filesNeeded: (((rec.scope || {}).declared) || []).length,
+    figuresUnsupported: (rec.claims || []).filter((cl) => cl.verdict !== 'supported').length,
+    figuresTraced: (rec.claims || []).filter((cl) => cl.verdict === 'supported').length,
     money,
     stake,
     stoppedWhat: rec.stoppedWhat || null,
@@ -208,7 +213,7 @@ function classifierScore(c) {
 }
 
 // The version that gets read out, pasted into an email, or shown on screen.
-function plain(b) {
+function plain(b, voiceInfo) {
   const L = [];
   L.push(`${b.studio} \u2014 the morning brief`);
   L.push(`${b.day}  \xb7  ${b.clock}  \xb7  for ${b.owner}`);
@@ -246,6 +251,8 @@ function plain(b) {
   L.push(`3. Self-check canary — ${b.selfCheck.canary.note} Result: ${b.selfCheck.canary.ok ? 'clean.' : 'FAILED — the oversight layer itself is the thing that broke.'}`);
   L.push(`4. Rule coverage — ${b.selfTest.rulesCovered}/${b.selfTest.rulesTotal} of your 19 rules exercised in a run last night; 19/19 have shipped behaviour behind them.`);
   L.push(`Classification check against the labels: ${b.classifier.correct}/${b.classifier.total}. Decisions made from 19 rules you wrote, not from vibes.`);
+  const vi = voiceInfo || b.voice || {};
+  L.push(`Wording: ${vi.used ? `${vi.used} of ${vi.total} sentences phrased by ${vi.model} on ${vi.calls} call(s), every figure then checked against the audited facts` : 'written by the rule engine, no model call'}${vi.rejected ? `; ${vi.rejected} generated sentence(s) rejected and replaced` : ''}.`);
   L.push('Answers, not alerts.');
   return L.filter((l, i) => l !== '' || i === 0 || L[i - 1] !== '').join('\n');
 }

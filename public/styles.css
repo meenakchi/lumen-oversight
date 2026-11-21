@@ -332,3 +332,41 @@ table.log td:nth-child(3) .mono { display: inline-block; max-width: 210px; overf
   .brand h1 { font-size: 20px; letter-spacing: -.02em }
   .section-head .note { display: block; margin-left: 0; max-width: none }
 }
+
+/* ---- wording provenance ---- */
+.voiceline { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 14px }
+.chipword { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line); background: #fff; color: var(--ink-soft) }
+.chipword.ok { box-shadow: inset 0 0 0 1px var(--allow); color: var(--allow) }
+.chipword.warn { box-shadow: inset 0 0 0 1px var(--hold); color: var(--hold) }
+.brief-item.aiword .bi-what::first-line { text-decoration: none }
+.srtag { font-family: var(--mono); font-size: 10px; color: var(--muted); align-self: center }
+.switch { display: inline-flex; gap: 6px; align-items: center; margin: 0; text-transform: uppercase; letter-spacing: .07em; font-size: 10px; color: var(--muted); cursor: pointer }
+.switch input { width: auto }
+
+/* ---- platform / guard ---- */
+.adv { border: 1px solid var(--line); border-left: 3px solid var(--allow); border-radius: 8px; padding: 10px 13px; margin-bottom: 10px; background: #fff }
+.adv[data-caught=false] { border-left-color: var(--muted) }
+.adv-head { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; margin-bottom: 6px }
+.adv blockquote.draft { font-family: var(--body); font-size: 16.5px }
+.adv p { margin: 6px 0 0 }
+
+/* ---- per-card wording provenance ---- */
+.provline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px }
+.provtion { font-family: var(--mono); font-size: 10.5px; text-transform: lowercase; letter-spacing: .02em; color: var(--muted); border: 1px dashed var(--line); padding: 2px 8px; border-radius: 999px; background: #fff }
+.provtion.gen { color: var(--allow); border-color: #A9CBBE; border-style: solid }
+button.swap { font-size: 10.5px; padding: 3px 9px }
+
+.lastrun { margin-top: 8px }
+.lastrun summary { cursor: pointer; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--hold) }
+.lastrun pre.src { margin-top: 8px }
+
+.caught-why { font-family: var(--mono); font-size: 11.5px; color: var(--block); background: rgba(163,38,56,.06); border-radius: 6px; padding: 5px 8px }
+
+/* wording-provenance strip: readable at a glance, not a footnote */
+.voiceline { gap: 9px; margin-top: 18px; align-items: center }
+.chipword { font-size: 12px; line-height: 1.5; padding: 4px 10px; letter-spacing: 0 }
+.chipword.ok { background: #F1F7F3 }
+.chipword.warn { background: #FBF3E7 }
+.provline .provtion { font-size: 11.5px; text-transform: none }
+.platform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start }
+@media (max-width: 1000px) { .platform-grid { grid-template-columns: 1fr } }

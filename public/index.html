@@ -3,25 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Morning Brief — Lumen Studio · the oversight agent</title>
-<meta name="description" content="An oversight agent for a one-person company: it logs every action a worker agent takes, classifies the data it touched, blocks what the owner's policy forbids, fact-checks every figure against the studio's own files, and writes a briefing a non-technical owner can read.">
+<title>Lumen Studio · oversight agent — Agents Watching Agents</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Source+Serif+4:opsz,wght@8..60,400..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<a class="skip" href="#panel-brief">Skip to the brief</a>
+<a class="skip" href="#main">Skip to the brief</a>
 
 <header class="masthead">
   <div class="wrap">
     <div class="mast-top">
       <div class="brand">
-        <h1>Lumen Studio</h1>
-        <span class="day" data-day>loading the night…</span>
+        <h1>Lumen Studio <span class="inkblock">oversight</span></h1>
+        <span class="day" data-day>loading the night&hellip;</span>
       </div>
       <nav class="mast-actions">
-        <button data-act="ask">Walk it through the gate</button>
+        <label class="switch mono"><input type="checkbox" id="wordToggle" checked><span>AI phrasing</span></label>
+        <button class="go" data-act="ask">Walk one agent through the gate</button>
         <button class="ghost" data-act="night">Replay last night</button>
         <button class="ghost" data-act="print">Print the brief</button>
       </nav>
@@ -29,16 +29,17 @@
     <div class="tabs" role="tablist" aria-label="Views">
       <button class="tab" role="tab" aria-selected="true" data-tab="brief">Morning brief</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="ledger">Audit trail</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="lab">Scenario lab <span class="tabnum mono" data-num="lab"></span></button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="lab">Scenario lab<span class="tabnum mono" data-num="lab"></span></button>
       <button class="tab" role="tab" aria-selected="false" data-tab="question">Ask the gate</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="policy">Rules &amp; data</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="platform">Platform</button>
     </div>
   </div>
 </header>
 
-<main class="wrap" id="app">
+<main class="wrap" id="main">
   <section class="panel" id="panel-brief" role="tabpanel">
-    <div class="belt" data-belt hidden></div>
+    <div class="belt" data-belt role="list" hidden></div>
     <div class="brief-head" id="head"></div>
     <div class="money-strip" id="protected"></div>
     <div id="sections"></div>
@@ -46,8 +47,9 @@
 
   <section class="panel" id="panel-ledger" role="tabpanel" hidden>
     <div class="section-head">
-      <h3>Audit trail</h3><span class="n" data-count="log"></span>
-      <span class="note">One row per action: who ran it, what it asked for, the files it touched, the level of that data, what the oversight agent decided, which rule. Click any row for the evidence and the line it came from.</span>
+      <h3>Audit trail</h3>
+      <span class="n mono" data-count="log"></span>
+      <span class="note">One row per action: when, who wanted it, what it touched, the data level, what the oversight layer decided, on which rule. Click a row for the evidence.</span>
     </div>
     <div class="filters" id="logFilters"></div>
     <div id="logTable"></div>
@@ -55,8 +57,9 @@
 
   <section class="panel" id="panel-lab" role="tabpanel" hidden>
     <div class="section-head">
-      <h3>Scenario lab</h3><span class="n" data-count="lab"></span>
-      <span class="note">Five rogue-agent runs from AvePoint's kit, five we wrote. Each step is graded on decision, rule and evidence, then replayed through the same gate the working agents use.</span>
+      <h3>Scenario lab</h3>
+      <span class="n mono" data-count="lab"></span>
+      <span class="note">Five rogue-agent runs from AvePoint's kit, plus five we wrote, graded on decision, rule and evidence — and the canary that checks the oversight layer itself.</span>
     </div>
     <div class="board" id="scoreBoard"></div>
     <div id="scnList"></div>
@@ -64,24 +67,26 @@
 
   <section class="panel" id="panel-question" role="tabpanel" hidden>
     <div class="section-head">
-      <h3>Ask the gate</h3><span class="note">Preset moments from tonight, or write your own draft. Nothing here sends anything — this is the checkpoint, before the action.</span>
+      <h3>Ask the gate</h3>
+      <span class="note">Pick a preset or write your own draft. The gate answers before anything is sent: the data level, whether the task needed the files, which rules fire, whether the figures trace, and the money in play.</span>
     </div>
     <div class="filters" id="presetRow"></div>
     <div class="ask-grid">
       <form class="ask" id="qForm"></form>
-      <div class="gate-out" id="qOut"><div class="empty">Pick a preset or edit the draft, then press <b>Ask the gate</b>. The result lands here: the level it found, the rule it ran, the figures it checked, and what it tells <span class="mono">Mei</span> in the morning.</div></div>
+      <div class="gate-out" id="qOut"><div class="empty">Choose a preset and press <b>Ask the gate</b> &mdash; the trace appears here.</div></div>
     </div>
   </section>
 
   <section class="panel" id="panel-policy" role="tabpanel" hidden>
     <div class="section-head">
-      <h3>Rules &amp; data</h3><span class="n" data-count="policy"></span>
-      <span class="note">The policy the owner wrote, the four levels it reasons over, and the labelling test the oversight agent scores itself on every run.</span>
+      <h3>Rules &amp; data</h3>
+      <span class="n mono" data-count="policy"></span>
+      <span class="note">The policy and taxonomy are read straight from AvePoint's starter kit: 19 rules, 4 data levels, 27 files with intended labels.</span>
     </div>
     <div class="ask-grid">
       <div>
         <table class="rules" id="rulesTable"></table>
-        <p class="hint">Conditions are the kit's own words, evaluated against Lumen Studio's files. R18 is the one that matters: an untraceable figure gets stopped even though the policy's word for R18 is ALLOW — because the ALLOW only applies while the figure traces.</p>
+        <p class="hint">Conditions are the kit's own words, evaluated against Lumen Studio's files. R18 is the one that matters: an untraceable figure gets stopped even though the policy's word for R18 is ALLOW &mdash; because the ALLOW only applies while the figure traces.</p>
       </div>
       <div>
         <div class="note-card" id="classifier"></div>
@@ -90,14 +95,27 @@
       </div>
     </div>
   </section>
+
+  <section class="panel" id="panel-platform" role="tabpanel" hidden>
+    <div class="section-head">
+      <h3>Built on QwenWork</h3>
+      <span class="note">Not a badge: which parts of this product run on the platform, what it costs per read, and what the platform refuses to let the model do.</span>
+    </div>
+    <div id="platformBody"></div>
+  </section>
 </main>
 
+<footer class="footer">
+  <div>Agents Watching Agents · QwenWork × Hashmeta AI One-Person Company Hackathon · Track 2 · built with QwenWork</div>
+  <div>World, policy, taxonomy, scenarios: AvePoint starter kit · all people, figures and identifiers invented</div>
+</footer>
+
 <div class="drawer" id="drawer" aria-hidden="true">
-  <div class="veil" data-act="closeDrawer"></div>
+  <div class="veil" data-act="drawer"></div>
   <aside class="sheet" role="dialog" aria-modal="true" aria-labelledby="drTitle">
     <header>
       <div style="min-width:0"><div class="mono" data-dr="eyebrow"></div><h2 id="drTitle" style="font-size:21px;margin-top:4px"></h2></div>
-      <button class="ghost" data-act="closeDrawer">Close</button>
+      <button class="ghost" data-act="drawer">Close</button>
     </header>
     <div class="content" data-dr="body"></div>
   </aside>
@@ -105,10 +123,6 @@
 
 <div class="toast" id="toast" role="status"></div>
 
-<footer class="footer">
-  <div>Built with QwenWork for the QwenWork × Hashmeta AI One-Person Company Hackathon · Track 2: AI Governance, Security &amp; Decision-Making · AvePoint challenge: Agents Watching Agents.</div>
-  <div>Lumen Studio, its clients, figures and identifiers are invented; the PDPA reasoning is not. Rules v1.0, updated 18 Nov 2026.</div>
-</footer>
 <script src="/app.js" defer></script>
 </body>
 </html>

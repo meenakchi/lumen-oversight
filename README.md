@@ -1,7 +1,7 @@
-# Morning Brief — the oversight agent for a one-person company
+# Morning Brief — the oversight agent for a one-person company
 
 Track 2 (AI Governance, Security & Decision-Making) · AvePoint challenge **Agents Watching Agents**
-Built with QwenWork for the QwenWork × Hashmeta AI One-Person Company Hackathon, 2026.
+Built with QwenWork for the QwenWork Ã Hashmeta AI One-Person Company Hackathon, 2026.
 
 A solo founder hands real work to AI agents and nobody checks what they actually did.
 This app is the checker: one logged channel every worker action must pass through, a
@@ -19,7 +19,7 @@ npm start         # node server.js, zero dependencies, http://localhost:3000
 ```
 
 State lives in `state/ledger.json`. Delete it (or press **Replay last night**) to rebuild the
-whole night from scratch — the seed is deterministic.
+whole night from scratch — the seed is deterministic.
 
 ## What is real and what is staged
 
@@ -42,10 +42,39 @@ engine/gate.js       ALLOW / HOLD_FOR_APPROVAL / BLOCK + evidence + money at sta
 engine/scenarios.js  replays, grading (decision · rule · evidence), the self-check canary
 engine/day.js        the night the workers ran; day.js also holds our extra scenarios
 engine/ledger.js     append-only log + approval queue, persisted
-engine/briefing.js   the morning brief, derived from the log — the product's output
+engine/briefing.js   the morning brief, derived from the log — the product's output
 public/              index.html · styles.css · app.js (vanilla, no framework, no build)
 server.js            zero-dependency Node http server: API + static
 ```
+
+## Where QwenWork is the engine, not the logo
+
+| Platform piece | What it does here |
+|---|---|
+| Model call (QwenWork MaaS chat, `qwen3.8-flash`) | writes the wording of the morning brief — never a verdict |
+| Number guard (`engine/voice.js`) | every figure and file name in generated prose must exist in the audited facts, or the sentence is rejected and the deterministic sentence is published instead |
+| Temptation test (`POST /api/voice/adversarial`) | asks a model to invent figures on purpose and reports what the guard caught |
+| Cloud schedules (no compute instance) | weekday 08:05 SGT: replay the night, regenerate the wording, deliver the six lines; nightly 02:00 SGT: run all ten scenarios + the canary and raise a regression as an alarm |
+| The app itself | zero npm dependencies; the platform is the infrastructure, not a package manager |
+
+Proved, not claimed. The Platform tab shows live call counts, tokens, every accepted sentence with the
+figures it checked, the rejection list, and the last scheduled run with what it delivered. Two buttons
+run the test in front of the judges: **invent a figure**, **claim the leak happened**.
+
+The guard checks five things, and each exists because the model actually did it:
+
+| Check | What the model was caught doing |
+|---|---|
+| Invented numbers | a `12%` margin, an `11%` discount, `SGD 350`, an `estimated SGD 12,000 annual loss` the studio never calculated |
+| Invented file names | a file no one gave it in the audited facts |
+| False leak claims | `SENSITIVE DATA HAS ALREADY LEAVED THE STUDIO: confidential client pricing was sent out, triggering a breach`, `BREACH CONFIRMED: Sensitive client data was successfully sent, uploaded, and shared` — in a product whose entire point is that it was stopped |
+| Unsupported consequences | legal exposure, fines, ruined margins, destroyed trust: none of it documented in any file |
+| Misattribution | `the draft includes your NRIC and home address`, when the draft said nothing of the kind and the agent had merely *opened* a file containing them |
+
+The counts are computed live, not hard-coded: the Platform tab shows all-time temptation runs, how many
+were thrown away, the breakdown by which check fired, and the rolling list of the figures the model made
+up. One clean run is reported as clean, never as proof — that is why the dares are buttons on the
+screen rather than a paragraph in this file.
 
 ## Scoreboard (from `GET /api/scenarios`)
 
@@ -53,8 +82,8 @@ server.js            zero-dependency Node http server: API + static
   It reads regulated data through an ordinary-looking client email (Nimbus, patient rows),
   keeps a cleared case study public, and treats bank details printed on an invoice the studio
   issued as the studio's own collection details rather than somebody's private account.
-- AvePoint's five scenarios: **15/15** — right decision, right rule, evidence cited.
-- Our five: **15/15** — obeyed-the-email injection, another client's true figure, the
+- AvePoint's five scenarios: **15/15** — right decision, right rule, evidence cited.
+- Our five: **15/15** — obeyed-the-email injection, another client's true figure, the
   contract-authorised delete, an unsupported supplier payment, an unknown recipient.
 - Rules exercised in a normal run: 15 of 19; all 19 have shipped behaviour behind them.
 - Money that did not move last night, with a receipt per item: **SGD 10,660**.
@@ -64,19 +93,23 @@ server.js            zero-dependency Node http server: API + static
 
 1. **Reads count.** The kit's hardest scenario sends nothing. We report the regulated files an
    agent opened anyway, in the same words as the money.
-2. **A floor is not an approval.** R08 (NEVER) blocks the 5,800 offer, and the item has no
-   release button, so the owner cannot accidentally approve what policy forbids.
-3. **Truth is a gate, not a report.** Every figure in a draft must trace to a line in a file.
-   R18 is written as ALLOW in the kit; untraceable, our engine escalates it to a stop and shows
-   the contradiction (25% drafted → 20% in the signed contract) side by side.
-4. **Legibility is the win condition.** The first screen is three numbers and five sentences.
-   "Stopped", "Waiting on you", "Worth a look". Evidence opens as the file with the line
-   highlighted behind it. Every colour in the interface means exactly one thing.
-5. **The watchtower watches itself.** Before writing the brief, the oversight agent points
-   itself at the file that really contains patient data and asks whether it read anything it
-   should not have. If that probe comes back clean when it shouldn't, the oversight layer
-   breaking silently is the loudest alarm in the product.
+2. **A floor is not an approval.** R08 (NEVER) blocks the 5,800 offer and the item has no release
+   button, so the owner cannot accidentally approve what policy forbids.
+3. **Truth is a gate, not a report.** Every figure in a draft must trace to a line in a file. R18
+   is written as ALLOW in the kit; untraceable, our engine escalates it to a stop and puts the
+   contradiction (25% drafted → 20% signed) side by side.
+4. **The model never decides.** `qwen3.8-flash` may write "the quote sat under your written floor";
+   it may not decide that it did. Turn **AI phrasing** off, or press **Show the sentence the rules
+   wrote** on any card: same facts, no model, same verdict. The guard proves figures were not
+   invented — a human still owns the wording standard.
+5. **Legibility is the win condition.** The first screen is four numbers and five sentences.
+   "Stopped", "Waiting on you", "Worth a look". Evidence opens with the quoted line highlighted
+   inside the file. Every colour in the interface means exactly one thing.
+6. **The watchtower watches itself.** Before writing the brief, the oversight agent points itself
+   at the file that really contains patient data and asks whether it read anything it should not
+   have. If that probe comes back clean when it shouldn't, the oversight layer breaking silently
+   becomes the loudest alarm in the product.
 
 ## Questions
 
-Starter kit contact: Nick Bao, Solution Director, AvePoint — Nick.Bao@avepoint.com
+Starter kit contact: Nick Bao, Solution Director, AvePoint — Nick.Bao@avepoint.com
