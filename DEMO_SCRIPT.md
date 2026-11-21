@@ -17,6 +17,11 @@ over the result rather than waiting on stage.
 
 Filler-free closing: "One person, five agents, nobody watching — until now."
 
+## Screenshots to take at the same time
+
+The site kit (`output/HASHMETA-SITE-KIT.md`) lists six shots, one per claim, in the order the page
+uses them — capture them in the same pass as the recording so the copy and the pictures agree.
+
 ## 60-second generated briefing video (the track's one piece of generated content)
 
 Read in Mei's voice, over screen recordings of the brief → evidence drawer → queue tap → lab.

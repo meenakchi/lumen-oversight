@@ -67,7 +67,10 @@ function renderBrief() {
       <p class="lede">${esc(b.lede)}</p>
       <div class="voiceline" data-voiceline>
         <span class="lead">Wording</span>
-        ${v.used ? chip(`wording: ${v.used}/${v.total} sentences phrased by ${esc(v.model)} on ${v.calls} call${v.calls === 1 ? '' : 's'} \u00b7 ${esc((v.tokens || {}).pt || 0)}+${esc((v.tokens || {}).ct || 0)} tokens`, 'ok') : chip('wording: the oversight agent\u2019s own deterministic sentences', '')}
+        ${v.used ? chip(`wording: ${v.used}/${v.total} sentences phrased by ${esc(v.model)} on ${v.calls} call${v.calls === 1 ? '' : 's'} \u00b7 ${esc((v.tokens || {}).pt || 0)}+${esc((v.tokens || {}).ct || 0)} tokens`, 'ok')
+          : (STATE.voiceStatus && STATE.voiceStatus.cred && STATE.voiceStatus.cred.source === null)
+            ? chip('wording here is the rule engine\u2019s own \u2014 this host has no model key. The recorded build-session generation is on the Platform tab', 'warn')
+            : chip('wording: the oversight agent\u2019s own deterministic sentences, generated so far this session: none', '')}
         ${v.rejected ? chip(`${v.rejected} generated sentence${v.rejected === 1 ? '' : 's'} thrown away by the fabrication guard \u2014 deterministic wording published`, 'warn') : v.used ? chip('fabrication guard: no invented figures, no false leak claims, no unsupported consequences', 'ok') : ''}
         ${v.enabled === false ? chip('model unavailable in this environment \u2014 nothing was faked', 'warn') : ''}
         <button class="ghost" data-act="rephrase" style="padding:2px 8px">Rephrase with QwenWork</button>
@@ -623,6 +626,7 @@ function renderPolicy() {
 async function loadPlatform() {
   const [vs, adv, cal] = await Promise.all([api('/api/voice'), api('/api/guard/tempt'), api('/api/guard/calibration')]);
   STATE.voiceStatus = vs; STATE.adv = adv.runs || []; STATE.tally = adv.tally || null; STATE.calib = cal.calibration || null;
+  STATE.record = (await api('/api/guard/record')).record || null;
   renderPlatform();
 }
 
@@ -663,6 +667,7 @@ function renderPlatform() {
     bag[k] = (bag[k] || 0) + 1;
   }
   const CAL = STATE.calib;
+  const REC = STATE.voiceStatus && STATE.voiceStatus.record ? { ...STATE.voiceStatus.record, rows: (STATE.record || {}).phrases || [], calls: (STATE.record || {}).calls, rejections: (STATE.record || {}).rejections || [] } : null;
   const T = STATE.tally || { runs: caught, caught, by_reason: bag, invented_figures: [], breach_claims: 0 };
   const whyBreak = Object.entries(T.by_reason || {}).sort((a, b2) => b2[1] - a[1]).map(([k, n]) => `${n} ${k}`).join(' \u00b7 ');
 
@@ -727,6 +732,17 @@ function renderPlatform() {
     </div>
 
     <div class="note-card" style="margin-top:16px">
+      <h4>Recorded generation, kept as an exhibit</h4>
+      <p class="hint" style="margin-bottom:8px">${REC ? esc(REC.note) : 'nothing recorded yet'}</p>
+      <p class="hint" style="margin-bottom:8px">${(STATE.voiceStatus || {}).available
+        ? `This host <b>does</b> have a key: the sentences in the brief above are a live generation (${esc(String(((STATE.voiceStatus || {}).last || {}).used) || 0)} of ${esc(String(((STATE.voiceStatus || {}).last || {}).total) || 0)}), and this card is a past one from ${(REC && REC.host ? esc(REC.host.endpoint || 'an endpoint') : 'a recorded run')}.`
+        : `This host has <b>no</b> key, so the sentences in the brief above were written by the rule engine. What is on this card was generated on ${REC && REC.host ? esc(REC.host.endpoint || 'a QwenWork endpoint') : 'a QwenWork host'} \u2014 an exhibit of a real run, not a live claim.`}</p>
+      ${REC ? `<div class="tag-row" style="margin-bottom:10px"><span class="pill">${esc(REC.model)}</span><span class="pill">${REC.phrases} sentences</span><span class="pill">${REC.calls} call(s)</span><span class="pill">${REC.rejected} rejected</span><span class="pill">recorded ${esc(fmtAgo(REC.recorded_at))}</span><span class="pill">${(STATE.voiceStatus || {}).available ? 'this host also has a live key' : 'no key on this host'}</span></div>
+        <div class="recorded-list">${REC.rows.map((p) => `<div class="checked-ok"><b>${esc(p.headline)}</b><div class="mono">${esc(p.why)}<br>figures the guard checked: ${p.figures_checked.length ? esc(p.figures_checked.join(', ')) : 'none in this sentence'}</div></div>`).join('')}</div>
+        ${REC.rejections.length ? `<p class="mono caught-why">rejected while recording: ${REC.rejections.map((r) => esc(r.reason + (r.offenders.length ? ' \u00b7 ' + r.offenders.join(', ') : ''))).join('  |  ')}</p>` : ''}` : ''}
+    </div>
+
+    <div class="note-card" style="margin-top:16px">
       <h4>Guard calibration: the two-sided check</h4>
       <p class="hint" style="margin-bottom:10px">A guard that only ever rejects is as useless as one that never does. This replays three sentences the audit should accept and three fabrications it must reject against the live facts of the current brief, and prints any row that disagrees with its own expectation \u2014 which has happened twice while building this, both times my bug, not the model's.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
@@ -756,7 +772,8 @@ function renderPlatform() {
       <div class="note-card" style="margin-top:16px">
         <h4>The platform surface this product sits on</h4>
         <p>Five worker agents modelled against the real corpus, one gateway, one append-only ledger, one briefing, one self-test. Model calls go out through the QwenWork MaaS endpoint; the app has zero npm dependencies, so the platform \u2014 not a package manager \u2014 is the infrastructure.</p>
-        <div class="tag-row"><span class="pill">${st.counts ? st.counts.entries : 0} ledger rows</span><span class="pill">${st.counts ? st.counts.files : 27} files classified</span><span class="pill">${st.board ? st.board.points : 0}/${st.board ? st.board.max : 30} scenario points</span><span class="pill">scheduler: ${sc.length ? `${sc.length} task${sc.length === 1 ? '' : 's'} registered` : 'nothing registered'}</span></div>
+        <div class="tag-row"><span class="pill">${st.counts ? st.counts.entries : 0} ledger rows</span>
+      <span class="pill">${(STATE.voiceStatus || {}).record ? `${STATE.voiceStatus.record.phrases} recorded sentences` : 'no recorded wording'}</span><span class="pill">${st.counts ? st.counts.files : 27} files classified</span><span class="pill">${st.board ? st.board.points : 0}/${st.board ? st.board.max : 30} scenario points</span><span class="pill">scheduler: ${sc.length ? `${sc.length} task${sc.length === 1 ? '' : 's'} registered` : 'nothing registered'}</span></div>
       </div>
       <div class="note-card">
         <h4>What runs on a timer</h4>
@@ -845,7 +862,10 @@ async function boot() {
   $('[data-act=print]').onclick = () => window.print();
   $$('.letter [data-open-text]').forEach((b) => (b.onclick = openBriefText));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
-  $$('[data-act=closeDrawer]').forEach((n) => (n.onclick = closeDrawer));
+  // both hook names have been used in the markup; bind either so the Close button
+  // can never silently do nothing again
+  $$('[data-act=closeDrawer], [data-act=drawer]').forEach((n) => (n.onclick = closeDrawer));
+  $$('[data-dr=body] [data-close]').forEach((n) => (n.onclick = closeDrawer));
 }
 
 async function rephraseIfCheap() {

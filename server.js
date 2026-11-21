@@ -74,6 +74,7 @@ async function api(req, res, url) {
     if (p === '/api/policy') return send(res, 200, { policy: policyRaw, taxonomy, agents: AGENTS, tools: gate.EXTERNAL_TOOLS, floors: c.floors, priceList: c.priceList, receivables: c.receivables, payables: c.payables, clients: c.clients.map((x) => ({ name: x.name, email: x.email })), suppliers: c.suppliers.map((s) => s.name) });
     if (p === '/api/day') return send(res, 200, { kit: KIT_SCRIPTS, routine: ROUTINE, ours: OURS });
     if (p === '/api/voice') return send(res, 200, voice.status());
+    if (p === '/api/guard/record') return send(res, 200, { record: voice.readRecord() });
     if (p === '/api/guard/calibration') {
       let cal = null;
       try { cal = JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'calibration.json'), 'utf8')); } catch (e) { cal = null; }

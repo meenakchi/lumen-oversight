@@ -14,20 +14,33 @@ const https = require('https');
 const http = require('http');
 
 const STATE = path.join(__dirname, '..', 'state', 'voice.json');
-const CRED = '/var/lib/qwenwork/cred';
-const BASE = (process.env.QW_API_BASE_URL || '').replace(/\/$/, '');
-const MODEL = process.env.OVERSIGHT_MODEL || 'qwen3.8-flash';
+const CRED = process.env.OVERSIGHT_CRED_FILE || '/var/lib/qwenwork/cred';
+// On a QwenWork host the sandbox injects the MaaS origin and rotates a credential
+// file. Anywhere else (Render, a laptop, CI) there is neither, so a user-supplied
+// key against the documented origin works too. Resolution order is explicit and
+// printed in the UI, because "which credential answered" is itself an audit fact.
+const BASE = (process.env.OVERSIGHT_LLM_BASE_URL || process.env.QW_API_BASE_URL || (process.env.OVERSIGHT_LLM_API_KEY ? 'https://api1.qwenwork.ai' : '')).replace(/\/$/, '');
+const MODEL = process.env.OVERSIGHT_LLM_MODEL || process.env.OVERSIGHT_MODEL || 'qwen3.8-flash';
+const RECORD = path.join(__dirname, '..', 'state', 'wording-record.json');
 
 // The sandbox rotates the MaaS access token into the cred file; environment keys
 // go stale mid-session. Read it fresh on every call so a long-running process
 // keeps working, and so a missing credential is an honest "no model here"
 // rather than a silent fake.
 function key() {
+  if (process.env.OVERSIGHT_LLM_API_KEY) return process.env.OVERSIGHT_LLM_API_KEY.trim();
   try {
     const v = fs.readFileSync(CRED, 'utf8').trim();
     if (v) return v;
-  } catch (e) { /* fall through to env */ }
+  } catch (e) { /* no sandbox credential here */ }
   return process.env.QWENWORK_ROUTER_API_KEY || process.env.MULEROUTER_API_KEY || process.env.QW_SESSION_KEY || '';
+}
+
+function keySource() {
+  if (process.env.OVERSIGHT_LLM_API_KEY) return 'OVERSIGHT_LLM_API_KEY (your own key, set in the host)';
+  try { if (fs.readFileSync(CRED, 'utf8').trim()) return 'sandbox credential file'; } catch (e) { /* none */ }
+  if (process.env.QWENWORK_ROUTER_API_KEY || process.env.MULEROUTER_API_KEY || process.env.QW_SESSION_KEY) return 'environment key';
+  return null;
 }
 
 const enabled = () => Boolean(BASE && key());
@@ -296,7 +309,7 @@ const HARM = /\b(?:breach|violat\w* (?:of|the) \w+ ?act|gdpr|regulator|fine[sd]?
 // never be told a true negation is a confession. Both directions are tested:
 // calibration rows 2 and 5 are this pattern and its opposite.
 const LEAK_CLAIM = new RegExp([
-  '\\b(?:was|were|has been|have been|had been|already been|got)\\s+(?:sent|uploaded|shared|emailed|disclosed|leaked|released|transmitted)\\b',
+  '\\b(?:was|were|has been|have been|had been|already been|got|is|are)\\s+(?:\\w+ly\\s+)?(?:sent|uploaded|shared|emailed|disclosed|leaked|released|transmitted|leaved)\\b',
   '\\bsent?\\s+(?:the\\s+)?(?:client\\s+)?(?:list|data|details|records)\\b',
   '\\b(?:data|details?|records?|information|the list|it|copy)\\b[^.;]{0,30}\\b(?:left|leaked|escaped|went out|got out|is out)\\b',
   '\\bbreach\\b[^.;]{0,30}\\b(?:occurred|happened|taken place|confirmed)\\b',
@@ -305,7 +318,7 @@ const LEAK_CLAIM = new RegExp([
 ].join('|'), 'gi');
 
 const NEGATED_LEAK = new RegExp([
-  '\\b(?:no|none|nothing|not any|never)\\b[^.;]{0,40}?\\b(?:data|details?|records?|information|copy|it|anything|the list)?\\s*(?:has\\s+been|have\\s+been|had\\s+been|was|were)?\\s*(?:already\\s+)?(?:left|leaked|went out|got out|is out|escaped|sent|uploaded|shared|emailed|disclosed|released)\\b',
+  '\\b(?:no|none|nothing|not any|never)\\b[^.;]{0,40}?\\b(?:data|details?|records?|information|copy|it|anything|the list)?\\s*(?:has\\s+been|have\\s+been|had\\s+been|was|were)?\\s*(?:already\\s+)?(?:\\w+ly\\s+)?(?:left|leaked|went out|got out|is out|escaped|sent|uploaded|shared|emailed|disclosed|released)\\b',
   '\\b(?:data|details?|records?|information|the list|it)\\b[^.;]{0,40}?\\b(?:was|were|has been|have been|had been|is|are)\\s*(?:not|never)\\s*(?:sent|uploaded|shared|emailed|disclosed|leaked|released|out)\\b',
   '\\bbut\\s+no\\s+(?:data|details|records|information)\\s+(?:left|was sent|has been sent)\\b',
 ].join('|'), 'gi');
@@ -363,6 +376,32 @@ function guard(fact, draft) {
 function load() {
   try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch (e) { return null; }
 }
+
+/* The recorded exhibit: what the model actually wrote during the build session, with
+   the guard results. Committed, and always labelled as recorded \u2014 a host without a
+   key should still be able to show what this feature does, but must not imply it ran
+   the model just now. */
+function readRecord() {
+  try { return JSON.parse(fs.readFileSync(RECORD, 'utf8')); } catch (e) { return null; }
+}
+
+function writeRecord(v, brief) {
+  try {
+    const phrases = Object.entries(v.phrases || {}).map(([id, p]) => {
+      const item = ((brief || {}).items || []).find((i) => i.id === id) || {};
+      return { id, headline: p.headline, why: p.why, recommend: p.recommend, figures_checked: p.guard.numbers_found, model: p.model };
+    });
+    if (!phrases.length) return;
+    fs.writeFileSync(RECORD, JSON.stringify({
+      recorded_at: v.created, model: v.model, calls: v.calls, tokens: v.tokens,
+      rejected: (v.rejections || []).length, rejections: (v.rejections || []).map((r) => ({ id: r.id, reason: r.reason, excerpt: r.offending_excerpt })),
+      money_protected: (((brief || {}).counts) || {}).protected || null,
+      host: { endpoint: BASE ? BASE.replace(/^https:\/\//, '').replace(/\/v1$/, '') : null, model: v.model, credential: keySource() },
+      note: 'A record of one real generation, kept so the feature can be shown on a host with no key. It describes what happened where it was recorded; it says nothing about the machine reading it now.',
+      phrases,
+    }, null, 1));
+  } catch (e) { /* the record is an exhibit, never a dependency */ }
+}
 function save(v) {
   try { fs.mkdirSync(path.dirname(STATE), { recursive: true }); fs.writeFileSync(STATE, JSON.stringify(v, null, 1)); } catch (e) { /* state is disposable */ }
 }
@@ -390,6 +429,7 @@ async function refresh(brief, force) {
   const keep = cached && cached.hash === hash && !force;
   const out = {
     hash, hashPrev: cached && cached.hash, model: MODEL, enabled: true, forced: Boolean(force),
+    host: { source: keySource(), endpoint: BASE || null }, 
     created: new Date().toISOString(), phrases: keep ? Object.assign({}, cached.phrases) : {}, rejections: [],
     calls: keep ? (cached.calls || 0) : 0, tokens: keep ? (cached.tokens || { pt: 0, ct: 0 }) : { pt: 0, ct: 0 },
   };
@@ -450,31 +490,42 @@ async function refresh(brief, force) {
     });
   }
   save(out);
+  writeRecord(out, brief);
   return out;
+}
+
+function sameHost(v) {
+  // A cache is only a live generation on the machine that made it. Elsewhere it is
+  // an exhibit, and the cards must not inherit it: otherwise a keyless Render box
+  // would claim sentences it never asked for.
+  const cur = keySource();
+  return Boolean(v && v.host && v.host.source && v.host.source === cur && (v.host.endpoint || null) === (BASE || null));
 }
 
 /** Merge generated phrasing into the deterministic brief object. */
 function apply(brief) {
   const v = load();
+  const live = sameHost(v);
   const items = brief.items;
   let used = 0;
   for (const i of items) {
-    i.provenance = v && v.phrases && v.phrases[i.id] ? 'generated' : 'deterministic';
-    if (v && v.phrases && v.phrases[i.id]) {
+    i.provenance = live && v.phrases && v.phrases[i.id] ? 'generated' : 'deterministic';
+    if (live && v.phrases && v.phrases[i.id]) {
       const p = v.phrases[i.id];
       i.gen = { headline: p.headline, why: p.why, recommend: p.recommend, guard: p.guard, model: p.model };
       used += 1;
     }
   }
   const phrasable = brief.sections.filter((x) => x.key !== 'allowed').flatMap((x) => x.items);
-  const usedPhrased = phrasable.filter((i) => v && v.phrases && v.phrases[i.id]).length;
+  const usedPhrased = phrasable.filter((i) => live && v.phrases && v.phrases[i.id]).length;
   brief.voice = v
     ? {
       enabled: v.enabled, model: v.model, created: v.created, used: usedPhrased, total: phrasable.length,
+      live_on_this_host: live, cache_host: v.host || null, this_host_credential: keySource(),
       calls: v.calls, tokens: v.tokens, rejected: (v.rejections || []).length, rejections: v.rejections || [],
       reused: Boolean(v.reused), error: v.error || null, note: v.note || null, fresh: v.hash === hashOf(brief.sections.filter((s) => s.key !== 'allowed').flatMap((s) => s.items)),
     }
-    : { enabled: enabled(), model: MODEL, used: 0, total: items.length, calls: 0, note: 'not generated yet' };
+    : { enabled: enabled(), model: MODEL, used: 0, total: items.length, live_on_this_host: false, calls: 0, note: 'not generated yet' };
   const sent = (v && v.phrases) || {};
   const allText = Object.values(sent).map((p) => `${p.headline} ${p.why} ${p.recommend || ''}`).join(' \n ');
   brief.guard = {
@@ -502,7 +553,13 @@ function status() {
   const v = load();
   return {
     available: enabled(), base: BASE ? BASE.replace(/\/v1$/, '') : null, model: MODEL,
-    cred: (() => { try { const st = fs.statSync(CRED); return { source: 'sandbox credential file', rotated: st.mtime.toISOString(), fresh: (Date.now() - st.mtimeMs) / 1000 < 7200 }; } catch (e) { return { source: 'environment', fresh: null }; } })(),
+    cred: (() => {
+      const source = keySource();
+      if (!source) return { source: null, fresh: null, endpoint: BASE || null, model: MODEL, set_these: ['OVERSIGHT_LLM_API_KEY', 'OVERSIGHT_LLM_BASE_URL (optional)', 'OVERSIGHT_LLM_MODEL (optional)'] };
+      if (source.startsWith('OVERSIGHT')) return { source, fresh: true, endpoint: BASE || null, model: MODEL };
+      try { const st = fs.statSync(CRED); return { source, rotated: st.mtime.toISOString(), fresh: (Date.now() - st.mtimeMs) / 1000 < 7200, endpoint: BASE || null, model: MODEL }; } catch (e) { return { source, fresh: null, endpoint: BASE || null, model: MODEL }; }
+    })(),
+    record: (() => { const r = readRecord(); return r ? { recorded_at: r.recorded_at, model: r.model, phrases: r.phrases.length, rejected: r.rejected, note: r.note } : null; })(),
     last: v ? {
       hash: v.hash, used: Object.keys(v.phrases || {}).length, total: phrasableCount(), rejected: (v.rejections || []).length,
       calls: v.calls, tokens: v.tokens, created: v.created, error: v.error || null, note: v.note || null,
@@ -675,4 +732,4 @@ function calibrationOfLast() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'state', 'calibration.json'), 'utf8')); } catch (e) { return null; }
 }
 
-module.exports = { refresh, apply, status, tally, calibration, calibrationOfLast, hasFreshCache, guard, factsFor, enabled, MODEL, adversarial };
+module.exports = { refresh, apply, status, tally, calibration, calibrationOfLast, hasFreshCache, readRecord, guard, factsFor, enabled, MODEL, adversarial };

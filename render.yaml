@@ -1,0 +1,17 @@
+# Render blueprint: one web service, no build, no dependencies to install.
+services:
+  - type: web
+    name: lumen-oversight
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: "echo 'no dependencies to install (zero npm packages)'"
+    startCommand: "node server.js"
+    healthCheckPath: /health
+    envVars:
+      - key: OVERSIGHT_LLM_API_KEY     # optional: without it the app says so and every
+        sync: false                    # sentence stays the rule engine's own wording
+      - key: OVERSIGHT_LLM_BASE_URL    # optional: any OpenAI-compatible /v1 origin
+        sync: false
+      - key: OVERSIGHT_LLM_MODEL       # optional: defaults to qwen3.8-flash
+        sync: false

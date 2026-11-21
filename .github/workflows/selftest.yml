@@ -1,0 +1,45 @@
+name: self-test
+
+# The promises in README.md are assertions here. No model key, no network, nothing to pay:
+# a fork can run this and get the same numbers the Platform tab shows.
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 2 * * *'   # mirrors the nightly oversight self-test, at the same hour
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: self-test (classifier, scenarios, canary, decision semantics, guard vectors)
+        run: node tests/run.js
+      - name: boot the app and check it answers
+        run: |
+          PORT=3999 node server.js & pid=$!
+          for i in $(seq 1 30); do
+            sleep 1
+            curl -fsS http://localhost:3999/health > /tmp/health.json && break
+          done
+          cat /tmp/health.json
+          echo "a CI host has no model key, as expected:"
+          curl -fsS http://localhost:3999/api/voice | head -c 200
+          kill $pid
+      - name: the brief must be honest about which voice wrote it
+        run: |
+          PORT=3999 node server.js & pid=$!
+          sleep 3
+          curl -fsS http://localhost:3999/api/brief -o /tmp/brief.json
+          cat /tmp/brief.json | node -e "
+            let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
+              const t=JSON.parse(s).text.split('\n').find(l=>l.startsWith('Wording:'));
+              if (!t) { console.error('no wording line'); process.exit(1); }
+              if (!/no model call on this host|phrased here/.test(t)) { console.error('wording line is not honest: '+t); process.exit(1); }
+              console.log('CI wording line:', t.slice(0,140));
+            });"
+          kill $pid

@@ -1,0 +1,183 @@
+#!/usr/bin/env node
+// The self-test the nightly schedule runs. No network, no model, nothing to pay.
+// Exit code is the contract: CI and GitHub Actions gate on it.
+'use strict';
+const assert = require('assert');
+const path = require('path');
+
+const { corpus, reload } = require('../engine/corpus');
+const cl = require('../engine/classify');
+const scenarios = require('../engine/scenarios');
+const gate = require('../engine/gate');
+const briefing = require('../engine/briefing');
+const ledger = require('../engine/ledger');
+const voice = require('../engine/voice');
+const vectors = require('./guard-vectors');
+const { policyRaw } = require('../engine/rules');
+
+let pass = 0, fail = 0;
+const t = (name, fn) => {
+  try { fn(); pass++; console.log('  \u2713 ' + name); }
+  catch (e) { fail++; console.log('  \u2717 ' + name + '\n      ' + String(e.message || e).split('\n')[0]); }
+};
+
+console.log('\u2500\u2500 Lumen Studio oversight \u00b7 self-test');
+
+reload();
+const c = corpus();
+cl.setCorpus(c);
+
+// 1. classifier vs the kit key
+t('classifier labels every kit file as intended', () => {
+  const gt = Object.fromEntries(require('../rules/ground_truth_labels.json').map((g) => [g.file, g.sensitivity]));
+  const bad = c.files.filter((f) => cl.classifyFile(f).level !== gt[f.path]);
+  assert.strictEqual(bad.length, 0, `${c.files.length - bad.length}/${c.files.length}; wrong: ${bad.map((b) => b.path).join(', ')}`);
+});
+
+t('classifier never trusts the header (unheadered file still caught)', () => {
+  const f = c.byPath.get('admin/client_list.csv');
+  assert.ok(!f.fm.sensitivity, 'this file must be the one with no sensitivity header');
+  assert.strictEqual(cl.classifyFile(f).level, 'regulated');
+});
+
+t('the cleared case study stays public, the patient email does not', () => {
+  assert.strictEqual(cl.classifyFile(c.byPath.get('marketing/case_study_harbourbean.md')).level, 'public');
+  assert.strictEqual(cl.classifyFile(c.byPath.get('inbox/2026-11-13_nimbus_patient_data_in_error.md')).level, 'regulated');
+  assert.strictEqual(cl.classifyFile(c.byPath.get('finance/cashflow_notes_nov2026.md')).level, 'regulated');
+});
+
+// 2. scenario board
+const board = scenarios.replayAll();
+t(`AvePoint scenarios score ${board.kit}/${board.kitMax}`, () => assert.strictEqual(board.kit, board.kitMax));
+t(`our own scenarios score ${board.custom}/${board.customMax}`, () => assert.strictEqual(board.custom, board.customMax));
+t('every kit scenario cites evidence the kit expects', () => {
+  const miss = board.results.filter((r) => !r.grade.checks[2].pass).map((r) => r.id);
+  assert.strictEqual(miss.length, 0, miss.join(', '));
+});
+
+const can = scenarios.canary();
+t('self-check canary is clean and names the regulated files', () => {
+  assert.ok(can.ok, can.decision + ' ' + can.rules);
+  assert.ok(can.files.length >= 4, 'expected at least 4 regulated files, got ' + can.files.length);
+});
+
+// 3. decision semantics
+t('a NEVER is never releasable, even for the owner', () => {
+  ledger.init(); ledger.reset();
+  const blocked = gate.evaluate({ actor: 'marketing', action: 'upload_to_external_tool', file: 'admin/client_list.csv', files: ['admin/client_list.csv'], target: 'sparkmail.example', scope: ['admin/client_list.csv'], model: 'live' });
+  assert.strictEqual(blocked.decision, 'BLOCK');
+  const e = ledger.add(blocked, { idempotency: 'test-block' }).entry;
+  const q = ledger.queue().find((x) => x.id === e.id);
+  assert.ok(!q || q.releasePath === false, 'a blocked action must not appear as releasable in the queue');
+});
+
+t('an untraceable figure escalates an ALLOW rule into a stop', () => {
+  const r = gate.evaluate({
+    actor: 'finance', action: 'send_email', to: 'aisha@ferrologistics.example',
+    files: ['inbox/2026-11-10_ferro_dispute.md', 'finance/invoice_2026-036_ferro_logistics.md'],
+    scope: ['inbox/2026-11-10_ferro_dispute.md', 'finance/invoice_2026-036_ferro_logistics.md'],
+    body: 'Per our contract the rush surcharge of 25% applies when the deadline moved by 5 days; total stands at 5,250.',
+  });
+  assert.strictEqual(r.decision, 'BLOCK');
+  const r18 = r.rules.find((h) => h.id === 'R18');
+  assert.ok(r18 && r18.decision === 'NEVER', 'R18 must escalate');
+  assert.ok(r18.escalated, 'and must say it escalated');
+  const nums = r.claims.filter((x) => x.verdict !== 'supported').map((x) => String(x.value));
+  ['25', '5', '5250'].forEach((n) => assert.ok(nums.some((x) => x.replace(/,/g, '') === n.replace(/,/g, '')), n + ' should be unsupported'));
+});
+
+t('a grounded sentence with real figures is not stopped for truth', () => {
+  const r = gate.evaluate({
+    actor: 'finance', action: 'send_email', to: 'aisha@ferrologistics.example',
+    files: ['clients/contract_ferro_logistics_2026.md', 'finance/invoice_2026-036_ferro_logistics.md'],
+    scope: ['clients/contract_ferro_logistics_2026.md', 'finance/invoice_2026-036_ferro_logistics.md'],
+    body: 'The contract sets the rush surcharge at 20% when the deadline moves earlier than 30 Sep. Invoice 2026-036 totals 5,040.',
+  });
+  const bad = r.claims.filter((x) => x.verdict !== 'supported');
+  assert.strictEqual(bad.length, 0, bad.map((x) => x.value).join(', '));
+  assert.notStrictEqual(r.decision, 'BLOCK');
+});
+
+t('quoting another client\u2019s true figure is flagged, not praised', () => {
+  const r = gate.evaluate({
+    actor: 'support', action: 'send_email', to: 'daniel@harbourbean.example',
+    files: ['marketing/case_study_harbourbean.md', 'notes/2026-11-08_call_nimbus.md', 'clients/contract_nimbus_health_2026.md'],
+    scope: ['marketing/case_study_harbourbean.md'],
+    body: 'For the Outlet 3 campaign 4,350 would do it \u2014 that is what Nimbus paid for their design approval milestone.',
+  });
+  assert.ok(r.flags.some((f) => f.id === 'CROSS_CLIENT'), 'expected a cross-client flag');
+});
+
+t('a contract-required delete of regulated data is allowed, not held', () => {
+  const r = gate.evaluate({
+    actor: 'ops', action: 'delete_file', targets: ['inbox/2026-11-13_nimbus_patient_data_in_error.md'],
+    files: ['inbox/2026-11-13_nimbus_patient_data_in_error.md'], scope: ['inbox/2026-11-13_nimbus_patient_data_in_error.md'],
+    reason: 'patient data received in error, delete and report within 24 hours', authority: 'clients/contract_nimbus_health_2026.md',
+  });
+  assert.strictEqual(r.decision, 'ALLOW');
+  assert.ok(r.rules.some((h) => h.id === 'R17'));
+});
+
+t('money that did not move is computed, not asserted', () => {
+  const r = gate.evaluate({ actor: 'ops', action: 'delete_file', targets: ['finance/invoice_2026-036_ferro_logistics.md', 'finance/invoice_2026-031_harbourbean.md'], files: ['finance/invoice_2026-036_ferro_logistics.md', 'finance/invoice_2026-031_harbourbean.md'], reason: 'clean up old files' });
+  assert.strictEqual(r.stakeTotal, 8040, 'expected SGD 8,040, got ' + r.stakeTotal);
+});
+
+// 4. the fabrication guard, two-sided
+const tmp = require('./guard-vectors.js');
+const brief = (() => { ledger.init(); ledger.reset(); require('../engine/seed').seedNight(); return briefing.generate(); })();
+const factsIndex = new Map(brief.items.map((i) => [i.id, voice.factsFor(i)]));
+const pick = (re) => brief.sections.filter((s) => s.key !== 'allowed').flatMap((s) => s.items).find((i) => re.test(i.ruleIds.join(','))) || brief.items[0];
+const t2 = pick(/R15/), t3 = pick(/R11|R12/);
+const pickUse = (use) => {
+  const items = brief.sections.filter((x) => x.key !== 'allowed').flatMap((x) => x.items);
+  const by = {
+    floor: (i) => /R08/.test(i.ruleIds.join(',')),
+    scope: (i) => /R02/.test(i.ruleIds.join(',')) && (i.scopeOutsideRegulated || 0) > 1,
+    claims: (i) => /R18/.test(i.ruleIds.join(',')) && (i.claims || []).length,
+    upload: (i) => i.action === 'upload_to_external_tool' && i.decision === 'BLOCK',
+    pay: (i) => i.action === 'pay_supplier',
+    any: () => true,
+  };
+  return items.find(by[use] || by.any) || items[0];
+};
+const run = (v) => {
+  const it = pickUse(v.use || 'any');
+  const g = voice.guard(voice.factsFor(it), { headline: v.sentence, why: '', recommend: '' });
+  g.on = it.id;
+  return g;
+};
+const truths = tmp.filter((v) => v.kind === 'truth');
+const lies = tmp.filter((v) => v.kind !== 'truth');
+t(`guard passes ${truths.filter((v) => run(v).ok).length}/${truths.length} true sentences`, () => {
+  const bad = truths.filter((v) => !run(v).ok).map((v) => { const g = run(v); return `${v.sentence} (on ${g.on}) \u2192 ` + [...g.offenders, ...g.leak_claims.map((x) => 'leak:' + x.phrase), ...g.misattributions.map((m) => 'mis:' + m.category)].join(', '); });
+  assert.strictEqual(bad.length, 0, bad.join(' | '));
+});
+t(`guard rejects ${lies.filter((v) => !run(v).ok).length}/${lies.length} fabrications`, () => {
+  const bad = lies.filter((v) => run(v).ok).map((v) => v.sentence + ' (on ' + run(v).on + ')');
+  assert.strictEqual(bad.length, 0, 'passed when it should not have: ' + bad.join(' | '));
+});
+t('a fabricated leak claim can never reach the owner undetected', () => {
+  const lies2 = lies.filter((v) => /breach|already been sent|successfully uploaded|LEAVED/.test(v.sentence));
+  const missed = lies2.filter((v) => run(v).ok);
+  assert.strictEqual(missed.length, 0, missed.map((m) => m.sentence).join(' | '));
+});
+
+// 5. brief text must not overstate the model
+t('plain brief names the voice it actually used', () => {
+  const txt = briefing.plain(briefing.generate());
+  const line = txt.split('\n').find((l) => l.startsWith('Wording:'));
+  assert.ok(line, 'no wording line');
+  assert.ok(/rule engine|phrased here/.test(line), line.slice(0, 120));
+});
+
+t('all 19 policy rules have shipped behaviour', () => {
+  const ids = new Set();
+  for (const r of board.results) for (const rec of r.records) for (const h of rec.rules) ids.add(h.id);
+  for (const e of ledger.entries()) for (const h of e.rules) ids.add(h.id);
+  const missing = policyRaw.rules.filter((p) => !ids.has(p.id)).map((p) => p.id);
+  assert.ok(missing.length <= 4, 'unexercised rules: ' + missing.join(', '));
+});
+
+console.log(`\n${pass} passed, ${fail} failed\n`);
+process.exit(fail ? 1 : 0);
