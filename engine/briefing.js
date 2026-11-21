@@ -61,7 +61,7 @@ function item(rec, s) {
     claims: rec.claims,
     scopeOutside: ((rec.scope || {}).outside || []).length,
     scopeOutsideRegulated: ((rec.scope || {}).regulatedReads || []).length,
-    filesNeeded: (((rec.scope || {}).declared) || []).length,
+    filesNeeded: (((rec.scope || {}).rows) || []).filter((r) => r.inScope).length,
     figuresUnsupported: (rec.claims || []).filter((cl) => cl.verdict !== 'supported').length,
     figuresTraced: (rec.claims || []).filter((cl) => cl.verdict === 'supported').length,
     money,
@@ -147,12 +147,15 @@ function generate() {
 function selfTest() {
   try {
     const b = require('./scenarios').replayAll();
+    let cal = null;
+    try { cal = require('./voice').calibrationOfLast(); } catch (e) { cal = null; }
     const used = new Set();
     for (const r of b.results) for (const rec of r.records) for (const h of rec.rules) used.add(h.id);
     for (const e of ledger.entries()) for (const h of e.rules) used.add(h.id);
     const total = require('./rules').policyRaw.rules.length;
     return {
       points: b.points, max: b.max, kit: b.kit, kitMax: b.kitMax, ours: b.custom, oursMax: b.customMax,
+      guardCalibration: cal,
       caught: b.results.filter((r) => r.grade.decision !== 'ALLOW').length,
       runs: b.results.length, rulesCovered: used.size, rulesTotal: total,
       rows: b.results.map((r) => ({ id: r.id, name: r.name, custom: !!r.custom, decision: r.grade.decision, want: r.expectedDecision, rules: r.grade.rules, points: r.grade.points, evidence: r.grade.checks[2] ? r.grade.checks[2].pass : null })),

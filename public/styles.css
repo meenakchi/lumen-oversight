@@ -370,3 +370,19 @@ button.swap { font-size: 10.5px; padding: 3px 9px }
 .provline .provtion { font-size: 11.5px; text-transform: none }
 .platform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start }
 @media (max-width: 1000px) { .platform-grid { grid-template-columns: 1fr } }
+
+.excerpt { font-size: 14px; color: var(--block); background: rgba(163,38,56,.06); border-left: 2px solid var(--block); border-radius: 0 6px 6px 0; padding: 5px 9px; margin-top: 6px }
+
+/* calibration rows: colour means the guard behaved, green is never given to a slip */
+.cal-row { border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: 8px; padding: 9px 12px; margin-bottom: 8px; background: #fff }
+.cal-row.cal-pass { border-left-color: var(--allow) }
+.cal-row.cal-caught { border-left-color: var(--hold) }
+.cal-row.cal-wrong { border-left-color: var(--block); background: #FCF2F3 }
+.cal-tag { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px }
+.cal-pass .cal-tag { color: var(--allow) } .cal-caught .cal-tag { color: var(--hold) } .cal-wrong .cal-tag { color: var(--block) }
+
+.checked-ok { border: 1px solid var(--line); border-left: 3px solid var(--allow); border-radius: 7px; padding: 8px 11px; margin-bottom: 6px; background: #fff }
+.checked-ok b { font-family: var(--display); font-size: 15.5px; font-weight: 700; display: block; margin-bottom: 3px }
+.checked-ok .mono { font-size: 11.5px; color: var(--muted) }
+.pill.ok { box-shadow: inset 0 0 0 1px var(--allow); color: var(--allow) }
+.pill.bad { box-shadow: inset 0 0 0 1px var(--block); color: var(--block) }

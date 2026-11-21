@@ -40,7 +40,7 @@ Read in Mei's voice, over screen recordings of the brief → evidence drawer →
 - [x] Platform depth, visible in the UI: model-written brief wording, audited by a number guard; two
       cloud schedules registered (weekday 08:05 SGT delivery, nightly 02:00 SGT self-test), with the
       last scheduled run and what it delivered shown on the Platform tab.
-- [ ] Deployed URL + credentials-free access for judges. Note: the model-phrased wording needs
+- [ ] Deployed URL + credentials-free access for judges (the app reads `PORT`, seeds its own night on boot, needs no login). Note: the model-phrased wording needs
       QwenWork credentials in the runtime. Anywhere else the app says so on screen and keeps its
       deterministic sentences — it never fakes a model call.
 - [ ] 3-minute demo video (script above) — record the run order, don't cut the pauses.

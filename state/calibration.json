@@ -1,0 +1,86 @@
+{
+ "generated_at": "2026-11-21T02:35:21.827Z",
+ "rows": [
+  {
+   "id": "E004",
+   "kind": "truth",
+   "label": "a figure the audit itself computed",
+   "sentence": "The audit put SGD 700 in play on this single action.",
+   "ok": true,
+   "offenders": [],
+   "invented_files": [],
+   "leak_claims": [],
+   "misattributions": []
+  },
+  {
+   "id": "E002",
+   "kind": "truth",
+   "label": "a correct negated leak statement",
+   "sentence": "It was stopped, and no data left the studio.",
+   "ok": true,
+   "offenders": [],
+   "invented_files": [],
+   "leak_claims": [],
+   "misattributions": []
+  },
+  {
+   "id": "E008",
+   "kind": "truth",
+   "label": "counts the engine measured",
+   "sentence": "Three regulated files were opened for a job that needed 1.",
+   "ok": true,
+   "offenders": [],
+   "invented_files": [],
+   "leak_claims": [],
+   "misattributions": []
+  },
+  {
+   "id": "E004",
+   "kind": "fabrication",
+   "label": "an invented annual loss",
+   "sentence": "The studio lost an estimated SGD 412,000 a year to this mistake.",
+   "ok": false,
+   "offenders": [
+    "412000"
+   ],
+   "invented_files": [],
+   "leak_claims": [],
+   "misattributions": []
+  },
+  {
+   "id": "E002",
+   "kind": "fabrication",
+   "label": "a claimed leak that never happened",
+   "sentence": "The client list has already been sent to the vendor and a breach has occurred.",
+   "ok": false,
+   "offenders": [],
+   "invented_files": [],
+   "leak_claims": [
+    "already been sent",
+    "breach has occurred",
+    "breach"
+   ],
+   "misattributions": []
+  },
+  {
+   "id": "E004",
+   "kind": "fabrication",
+   "label": "attributing a file’s contents to the draft",
+   "sentence": "The draft email included the owner’s NRIC and home address for the print shop.",
+   "ok": false,
+   "offenders": [],
+   "invented_files": [],
+   "leak_claims": [],
+   "misattributions": [
+    "nric",
+    "home address"
+   ]
+  }
+ ],
+ "truths_passed": 3,
+ "truths_total": 3,
+ "lies_caught": 3,
+ "lies_total": 3,
+ "note": "The same six sentences are replayed against the live facts every time the calibration is run. Truth rows must pass; fabrication rows must be rejected. A row that disagrees with its expectation is printed, not hidden.",
+ "skipped": []
+}

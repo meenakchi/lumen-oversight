@@ -621,9 +621,23 @@ function renderPolicy() {
 
 /* ------------------------------------------------------------- platform */
 async function loadPlatform() {
-  const [vs, adv] = await Promise.all([api('/api/voice'), api('/api/voice/adversarial')]);
-  STATE.voiceStatus = vs; STATE.adv = adv.runs || []; STATE.tally = adv.tally || null;
+  const [vs, adv, cal] = await Promise.all([api('/api/voice'), api('/api/voice/adversarial'), api('/api/guard/calibration')]);
+  STATE.voiceStatus = vs; STATE.adv = adv.runs || []; STATE.tally = adv.tally || null; STATE.calib = cal.calibration || null;
   renderPlatform();
+}
+
+async function runCalibration(btn) {
+  const out = $('[data-calstate]');
+  $$('[data-act=calibrate]').forEach((b) => (b.disabled = true));
+  if (out) out.textContent = 'replaying six sentences against the live facts\u2026';
+  try {
+    await api('/api/guard/calibration', {});
+    await loadPlatform();
+    const c = STATE.calib || {};
+    toast(c.truths_passed === c.truths_total && c.lies_caught === c.lies_total
+      ? `calibration held: ${c.truths_passed}/${c.truths_total} true sentences passed, ${c.lies_caught}/${c.lies_total} fabrications rejected`
+      : `calibration found a problem \u2014 look at the rows marked WRONG`);
+  } finally { $$('[data-act=calibrate]').forEach((b) => (b.disabled = false)); }
 }
 function renderPlatform() {
   const vs = STATE.voiceStatus || {};
@@ -648,6 +662,7 @@ function renderPlatform() {
       : w.includes('outbound') ? 'misattributed a file to the draft' : 'other';
     bag[k] = (bag[k] || 0) + 1;
   }
+  const CAL = STATE.calib;
   const T = STATE.tally || { runs: caught, caught, by_reason: bag, invented_figures: [], breach_claims: 0 };
   const whyBreak = Object.entries(T.by_reason || {}).sort((a, b2) => b2[1] - a[1]).map(([k, n]) => `${n} ${k}`).join(' \u00b7 ');
 
@@ -656,6 +671,7 @@ function renderPlatform() {
     { v: String(last.rejected || 0), l: 'sentences thrown away in the current brief', s: (last.rejected ? 'deterministic wording published instead' : 'this batch stayed inside the facts \u2014 the temptation runs below are the stress test') },
     { v: T.runs ? `${T.caught}/${T.runs}` : '\u2013', l: 'temptation sentences the guard threw away, all-time', s: whyBreak || 'the model is dared to invent a figure, and to claim the leak already happened' },
     { v: '0', l: 'decisions made by the model', s: 'verdicts come from policy.json only' },
+    { v: CAL ? `${(CAL.truths_passed || 0) + (CAL.lies_caught || 0)}/${CAL.truths_total + CAL.lies_total}` : '\u2013', l: 'calibration rows behaving as expected', s: CAL ? `${CAL.truths_passed}/${CAL.truths_total} true sentences passed \u00b7 ${CAL.lies_caught}/${CAL.lies_total} fabrications rejected` : 'press Run calibration' },
   ];
 
   $('#platformBody').innerHTML = `
@@ -670,9 +686,11 @@ function renderPlatform() {
           <span class="pill">endpoint ${esc(vs.base ? String(vs.base).replace(/^https:\/\//, '') : 'none')}</span>
           <span class="pill">model ${esc(vs.model)}</span>
           <span class="pill">${esc((vs.cred || {}).source || 'no credential')}</span>
+          ${CAL ? `<span class="pill ${CAL.truths_passed === CAL.truths_total && CAL.lies_caught === CAL.lies_total ? 'ok' : 'bad'}">guard calibration ${CAL.truths_passed + CAL.lies_caught}/${CAL.truths_total + CAL.lies_total} as expected</span>` : ''}
           ${vs.cred && vs.cred.fresh ? '<span class="pill pass">token fresh</span>' : '<span class="pill fail">token stale or absent</span>'}
         </div>
         ${last.error ? `<p class="hint" style="color:var(--block)">last generation error: ${esc(last.error)}</p>` : ''}
+        ${last.phrases && last.phrases.length ? `<details class="lastrun" open><summary>the sentences it wrote, with the figures checked</summary>${last.phrases.map((p) => `<div class="checked-ok"><b>${esc(p.headline)}</b><div class="mono">figures in the sentence: ${p.numbers.length ? esc(p.numbers.join(', ')) : 'none'} \u00b7 every one present in the audited facts</div></div>`).join('')}</details>` : ''}
         ${vs.last && vs.last.note ? `<p class="hint">${esc(vs.last.note)}</p>` : ''}
       </div>
 
@@ -702,7 +720,31 @@ function renderPlatform() {
           ${(r.caught_because || []).length ? `<p class="mono caught-why">caught because: ${r.caught_because.map(esc).join(' \u00b7 ')}</p>` : ''}
           ${r.offenders && r.offenders.length ? `<p class="mono">invented: ${r.offenders.join(', ')} \u2014 lawful numbers were: ${(r.numbers_in_facts || []).join(', ')}</p>` : ''}
         </div>`).join('') || '<p class="hint">Nothing run yet.</p>'}
-      ${last.rejections && last.rejections.length ? `<div style="margin-top:12px"><h4 class="mono" style="color:var(--muted)">REJECTIONS FROM THE REAL BRIEF</h4>${last.rejections.map((r) => `<p class="hint"><span class="mono">${esc(r.id)}</span> \u2014 ${esc(r.reason)}${r.offenders.length ? ': ' + r.offenders.join(', ') : ''}</p>`).join('')}</div>` : ''}
+      ${last.rejections && last.rejections.length ? `<div style="margin-top:12px"><h4 class="mono" style="color:var(--muted)">REJECTIONS FROM THE REAL BRIEF, NOT FROM A TEST</h4>${last.rejections.map((r) => `<div class="fab">
+            <div class="fab-why"><span class="mono">${esc(r.reason)}</span>${r.offenders.length ? ` \u00b7 ${r.offenders.join(', ')}` : ''}${(r.leak_claims || []).length ? ` \u00b7 ${(r.leak_claims || []).map((l) => l.phrase).join(', ')}` : ''}${(r.misattributions || []).length ? ` \u00b7 ${(r.misattributions || []).map((m) => m.category).join(', ')}` : ''}</div>
+            ${r.offending_excerpt ? `<div class="excerpt">thrown away \u2014 \u201c${esc(String(r.offending_excerpt).replace(/^"|"$/g, ''))}\u201d</div>` : ''}
+          </div>`).join('')}</div>` : `<p class="hint" style="margin-top:10px">The guard rejected nothing in the current brief: every published sentence stayed inside its facts.</p>`}
+    </div>
+
+    <div class="note-card" style="margin-top:16px">
+      <h4>Guard calibration: the two-sided check</h4>
+      <p class="hint" style="margin-bottom:10px">A guard that only ever rejects is as useless as one that never does. This replays three sentences the audit should accept and three fabrications it must reject against the live facts of the current brief, and prints any row that disagrees with its own expectation \u2014 which has happened twice while building this, both times my bug, not the model's.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <button class="go" data-act="calibrate">Run calibration</button>
+        <button class="ghost" data-act="temptboth">Run both dares back to back</button>
+        <span class="hint" data-calstate>${CAL ? `last run ${esc(fmtAgo(CAL.generated_at))}` : 'not run in this session yet'}</span>
+      </div>
+      ${(CAL && CAL.rows && CAL.rows.length) ? CAL.rows.map((r) => {
+        const asExpected = (r.kind === 'truth') === r.ok;
+        const goodRejection = r.kind === 'fabrication' && !r.ok;
+        const cls = !asExpected ? 'cal-wrong' : goodRejection ? 'cal-caught' : 'cal-pass';
+        const verdict = !asExpected ? 'WRONG \u2014 look here' : goodRejection ? 'caught, as it should be' : r.kind === 'truth' ? 'allowed through, as it should be' : 'slipped through';
+        return `<div class="cal-row ${cls}">
+            <div class="mono cal-tag">${verdict} \u00b7 ${r.kind === 'truth' ? 'a sentence that should pass' : 'a sentence that should be rejected'} \u00b7 ${esc(r.id)} \u00b7 ${esc(r.label)}</div>
+            <p style="margin:3px 0 4px">\u201c${esc(r.sentence)}\u201d</p>
+            <p class="mono" style="margin:0">\u2192 ${r.ok ? 'passed' : 'rejected'}${r.offenders.length ? ` \u00b7 invented numbers: ${r.offenders.join(', ')}` : ''}${r.leak_claims.length ? ` \u00b7 false leak claims: ${r.leak_claims.join(', ')}` : ''}${r.misattributions.length ? ` \u00b7 misattributed to the draft: ${r.misattributions.join(', ')}` : ''}</p>
+          </div>`;
+      }).join('') : '<p class="hint">Not run yet \u2014 press Run calibration.</p>'}
     </div>
 
     <div class="grid2" style="margin-top:16px">
@@ -722,6 +764,10 @@ function renderPlatform() {
       </div>
     </div>`;
 
+  const tb = $('[data-act=temptboth]');
+  if (tb) tb.onclick = async () => { await tempt('numbers', tb); await tempt('breach', tb); };
+  const cb = $('[data-act=calibrate]');
+  if (cb) cb.onclick = () => runCalibration(cb);
   const tl = $('[data-act=temptleak]');
   if (tl) tl.onclick = () => tempt('leak', tl);
   const t = $('[data-act=tempt]');

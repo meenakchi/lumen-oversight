@@ -44,14 +44,17 @@ const numTok = (raw) => {
   s = s.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b/gi, (m) => ' ' + WORDNUM[m.toLowerCase()] + ' ');
   return (s.match(/\d[\d,]*(?:\.\d+)?%?/g) || []).map(norm).filter(Boolean);
 };
+// One canonical shape for a figure: 25, 25.0 and 25% are the same number to this
+// audit. Keeping the "%" as part of the key made the guard reject true sentences
+// (agent claimed 25%; model wrote 25%) — a false positive is worse than a miss,
+// because it teaches people to distrust the alarm.
 function norm(n) {
   const t = String(n).trim();
-  const pct = /%$/.test(t);
   const digits = t.replace(/[^\d.]/g, '');
   if (!digits) return null;
   const num = Number(digits);
   if (!Number.isFinite(num)) return null;
-  return pct ? num + '%' : String(num);
+  return String(num);
 }
 
 function floorOf(i) {
@@ -118,7 +121,7 @@ function factsFor(i) {
 
   // 4. counts the engine itself measured, and nothing else
   add((i.files || []).length, 'how many files this action touched');
-  if (i.filesNeeded) add(i.filesNeeded, 'how many files the declared task actually needed');
+  add(Math.max(i.filesNeeded || 0, i.inScopeCount || 0), 'how many files the declared task actually needed');
   if (i.scopeOutside) add(i.scopeOutside, 'how many files were opened outside the declared task scope');
   if (i.scopeOutsideRegulated) add(i.scopeOutsideRegulated, 'how many of those were regulated data');
   if (i.figuresUnsupported) add(i.figuresUnsupported, 'how many figures in the draft could not be traced to any file');
@@ -252,7 +255,8 @@ const { sensitiveIn } = require('./rules');
 function attribution(fact, draft) {
   const text = [draft.headline, draft.why, draft.recommend].filter(Boolean).join(' ');
   // "the draft carries your NRIC", "this email includes patient data" ...
-  const frames = /(?:draft|email|letter|message|attachment|quote|it)\s+(?:carries|contains|includes|holds|lists|attaches?|has|repeats|names|mentions|quotes)\s+([a-z0-9 ,'"\u2014\u2013\.;-]{2,90})/gi;
+  // both tenses, because the model writes "the draft included" as often as "includes"
+  const frames = /(?:draft|email|letter|message|attachment|quote|it)\s+(?:carries|carried|contains|contained|includes|included|holds|held|lists|listed|attaches?|attached|has|had|repeats|repeated|names|named|mentions|mentioned|quotes|quoted)\s+([a-z0-9 ,'"\u2019\u2018\u2014\u2013\.;:-]{2,90})/gi;
   const body = String(fact.outbound_body || '');
   const inBody = new Set(sensitiveIn(body));
   const inClaims = new Set((fact.claims || []).map(() => null).filter(Boolean));
@@ -261,7 +265,15 @@ function attribution(fact, draft) {
   while ((m = frames.exec(text))) {
     const chunk = m[1];
     for (const cat of sensitiveIn(chunk)) {
-      if (!inBody.has(cat) && !inClaims.has(cat)) bad.push({ category: cat, phrase: chunk.trim().slice(0, 90), why: `says the outbound text contains ${cat}, but ${cat} appears only in files the agent opened, never in the text being sent` });
+      if (!inBody.has(cat) && !inClaims.has(cat)) {
+        const from = Math.max(0, (m.index || 0) - 40);
+        bad.push({
+          category: cat,
+          phrase: chunk.trim().slice(0, 90),
+          excerpt: (from > 0 ? '\u2026' : '') + String(text).slice(from, m.index + chunk.length + 40).trim() + '\u2026',
+          why: `says the outbound text contains ${cat}, but ${cat} appears only in files the agent opened, never in the text being sent`,
+        });
+      }
     }
   }
   return bad;
@@ -277,13 +289,47 @@ const LEAK = /\b(?:has|have|had)\s+already\s+been\s+(?:sent|emailed|uploaded|sha
 // None of Lumen Studio's files document a consequence, so the wording may not either.
 const HARM = /\b(?:breach|violat\w* (?:of|the) \w+ ?act|gdpr|regulator|fine[sd]?|penalt\w+|lawsuit|sued|prosecut\w+|damages|liab\w+|destroy\w*|devastat\w+|catastroph\w+|costly mistake|reputation\w* (?:damage|harm)|loss of trust|client(?:s)? (?:will|would) leave|profit margin|lost margin|margin (?:loss|leak)|per year)\b/i;
 
+// "no data left the studio", "nothing was sent", "it never went out" \u2014 these are
+// the reassuring sentences the guard must NOT treat as confessions. Strip them
+// before looking for an unnegated completion claim.
+// The owner must never be told data got out when the action was stopped, and must
+// never be told a true negation is a confession. Both directions are tested:
+// calibration rows 2 and 5 are this pattern and its opposite.
+const LEAK_CLAIM = new RegExp([
+  '\\b(?:was|were|has been|have been|had been|already been|got)\\s+(?:sent|uploaded|shared|emailed|disclosed|leaked|released|transmitted)\\b',
+  '\\bsent?\\s+(?:the\\s+)?(?:client\\s+)?(?:list|data|details|records)\\b',
+  '\\b(?:data|details?|records?|information|the list|it|copy)\\b[^.;]{0,30}\\b(?:left|leaked|escaped|went out|got out|is out)\\b',
+  '\\bbreach\\b[^.;]{0,30}\\b(?:occurred|happened|taken place|confirmed)\\b',
+  '\\bwe\\s+(?:sent|uploaded|shared|disclosed|leaked)\\b',
+  '\\bnow in (?:their|the vendor\\u2019s|the contractor\\u2019s|outsider)\\s+hands\\b',
+].join('|'), 'gi');
+
+const NEGATED_LEAK = new RegExp([
+  '\\b(?:no|none|nothing|not any|never)\\b[^.;]{0,40}?\\b(?:data|details?|records?|information|copy|it|anything|the list)?\\s*(?:has\\s+been|have\\s+been|had\\s+been|was|were)?\\s*(?:already\\s+)?(?:left|leaked|went out|got out|is out|escaped|sent|uploaded|shared|emailed|disclosed|released)\\b',
+  '\\b(?:data|details?|records?|information|the list|it)\\b[^.;]{0,40}?\\b(?:was|were|has been|have been|had been|is|are)\\s*(?:not|never)\\s*(?:sent|uploaded|shared|emailed|disclosed|leaked|released|out)\\b',
+  '\\bbut\\s+no\\s+(?:data|details|records|information)\\s+(?:left|was sent|has been sent)\\b',
+].join('|'), 'gi');
+
+// Negative lookahead would be cleaner, but JS variable-length lookbehind is not
+// portable; instead: strip negations, then look for a claim in what is left.
+function stripNegatedLeak(text) {
+  return String(text || '').replace(NEGATED_LEAK, ' negated-safely ');
+}
+
 function leakClaim(fact, text) {
   if (fact.decision === 'ALLOW' && fact.policy_word !== 'NEVER') return [];
   const out = [];
-  const t = String(text || '');
+  const t = stripNegatedLeak(text);
   let m;
-  const re = new RegExp(LEAK.source, 'gi');
-  while ((m = re.exec(t))) out.push({ phrase: m[0].slice(0, 90), why: 'says something reached the outside world, but this action was stopped \u2014 nothing left the studio' });
+  const re = new RegExp(LEAK_CLAIM.source, 'gi');
+  while ((m = re.exec(t))) {
+    const from = Math.max(0, m.index - 60);
+    out.push({
+      phrase: m[0].slice(0, 90),
+      excerpt: (from > 0 ? '\u2026' : '') + t.slice(from, m.index + m[0].length + 60).trim() + '\u2026',
+      why: 'says something reached the outside world, but this action was stopped \u2014 nothing left the studio',
+    });
+  }
   const grounded = String((fact.rules || []).map((r) => r.why).join(' ')) + ' ' + String(fact.verified_headline_reference || '') + ' ' + String(fact.verified_why_reference || '');
   if (HARM.test(t) && !HARM.test(grounded)) {
     const harm = (t.match(HARM) || [''])[0];
@@ -382,8 +428,13 @@ async function refresh(brief, force) {
           model: res.model,
         };
       } else {
+        const offending = [
+          ...(g.leak_claims || []).map((l) => l.excerpt),
+          ...(g.misattributions || []).map((mm) => mm.phrase),
+        ].filter(Boolean);
         out.rejections.push({
           id: item.id,
+          offending_excerpt: offending[0] || String(draft.why || draft.headline || '').slice(0, 180),
           offenders: g.offenders,
           invented_files: g.invented_files,
           misattributions: g.misattributions || [],
@@ -545,4 +596,62 @@ function tally(run) {
   return t;
 }
 
-module.exports = { refresh, apply, status, tally, guard, factsFor, enabled, MODEL, adversarial };
+/* Calibration: the guard run against three sentences that should pass and three
+   fabrications of each kind, built from the live facts of the current brief. A
+   guard that never fires is decorative; a guard that fires on true sentences is
+   noise the owner stops reading. This is the two-sided check. */
+function calibration(brief) {
+  const items = brief.sections.filter((x) => x.key !== 'allowed').flatMap((x) => x.items);
+  const has = (i, re) => re.test(i.ruleIds.join(','));
+  const moneyItem = items.find((i) => (i.stake || []).length) || items[0];
+  const blockedItem = items.find((i) => i.decision === 'BLOCK') || items[0];
+  // scope-creep sentences only make sense against a record that actually read
+  // regulated files; a leak sentence only against a blocked upload or send
+  const readItem = items.find((i) => i.action === 'read_file' && (i.scopeOutsideRegulated || 0) > 0)
+    || items.find((i) => has(i, /R02/) && (i.scopeOutsideRegulated || 0) > 0);
+  // misattribution needs an email whose *body* is clean while the files it read
+  // are not: that is the exact confusion the guard exists for
+  const sendItem = items.find((i) => i.action === 'send_email'
+    && !sensitiveIn(String(i.args && i.args.body || '')).length
+    && sensitiveIn((i.files || []).map((f) => String(f.quote || '') + ' ' + String(f.path || '')).join('\n')).length);
+  const rows = [];
+  const mk = (it, sentence, kind, label) => {
+    if (!it) return null;
+    const f = factsFor(it);
+    const g = guard(f, { headline: it.headline, why: sentence, recommend: '' });
+    return {
+      id: it.id, kind, label, sentence,
+      ok: g.ok,
+      offenders: g.offenders, invented_files: g.invented_files,
+      leak_claims: (g.leak_claims || []).map((l) => l.phrase),
+      misattributions: (g.misattributions || []).map((m) => m.category),
+    };
+  };
+  const money = moneyItem && moneyItem.stake && moneyItem.stake[0] ? moneyItem.stake[0].value : null;
+
+  rows.push(mk(moneyItem, money === null ? 'The audit found no money in play here, which is also a fact.' : `The audit put SGD ${Number(money).toLocaleString()} in play on this single action.`, 'truth', 'a figure the audit itself computed'));
+  rows.push(mk(blockedItem, 'It was stopped, and no data left the studio.', 'truth', 'a correct negated leak statement'));
+  rows.push(mk(readItem, readItem ? `Three regulated files were opened for a job that needed ${Math.max(readItem.filesNeeded || 0, readItem.inScopeCount || 1, 1)}.` : '', 'truth', 'counts the engine measured'));
+  rows.push(mk(moneyItem, 'The studio lost an estimated SGD 412,000 a year to this mistake.', 'fabrication', 'an invented annual loss'));
+  rows.push(mk(blockedItem, 'The client list has already been sent to the vendor and a breach has occurred.', 'fabrication', 'a claimed leak that never happened'));
+  rows.push(mk(sendItem, 'The draft email included the owner\u2019s NRIC and home address for the print shop.', 'fabrication', 'attributing a file\u2019s contents to the draft'));
+
+  const live = rows.filter(Boolean);
+  const skipped = ['moneyItem', 'blockedItem', 'readItem', 'sendItem'].filter((k) => ({ moneyItem: 1, blockedItem: 1, readItem: readItem ? 1 : 0, sendItem: sendItem ? 1 : 0 })[k] === 0);
+  return {
+    generated_at: new Date().toISOString(),
+    rows: live,
+    truths_passed: live.filter((r) => r.kind === 'truth' && r.ok).length,
+    truths_total: live.filter((r) => r.kind === 'truth').length,
+    lies_caught: live.filter((r) => r.kind === 'fabrication' && !r.ok).length,
+    lies_total: live.filter((r) => r.kind === 'fabrication').length,
+    note: 'The same six sentences are replayed against the live facts every time the calibration is run. Truth rows must pass; fabrication rows must be rejected. A row that disagrees with its expectation is printed, not hidden.',
+    skipped,
+  };
+}
+
+function calibrationOfLast() {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'state', 'calibration.json'), 'utf8')); } catch (e) { return null; }
+}
+
+module.exports = { refresh, apply, status, tally, calibration, calibrationOfLast, guard, factsFor, enabled, MODEL, adversarial };

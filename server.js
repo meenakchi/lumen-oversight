@@ -74,6 +74,11 @@ async function api(req, res, url) {
     if (p === '/api/policy') return send(res, 200, { policy: policyRaw, taxonomy, agents: AGENTS, tools: gate.EXTERNAL_TOOLS, floors: c.floors, priceList: c.priceList, receivables: c.receivables, payables: c.payables, clients: c.clients.map((x) => ({ name: x.name, email: x.email })), suppliers: c.suppliers.map((s) => s.name) });
     if (p === '/api/day') return send(res, 200, { kit: KIT_SCRIPTS, routine: ROUTINE, ours: OURS });
     if (p === '/api/voice') return send(res, 200, voice.status());
+    if (p === '/api/guard/calibration') {
+      let cal = null;
+      try { cal = JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'calibration.json'), 'utf8')); } catch (e) { cal = null; }
+      return send(res, 200, { calibration: cal });
+    }
     if (p === '/api/voice/adversarial') {
       let runs = [];
       try { runs = JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'adversarial.json'), 'utf8')).runs; } catch (e) { runs = []; }
@@ -148,6 +153,12 @@ async function api(req, res, url) {
     const b = briefing.generate();
     const v = await voice.refresh(b, Boolean(body.force));
     return send(res, v.error ? 502 : 200, { voice: v, brief: voice.apply(briefing.generate()) });
+  }
+
+  if (req.method === 'POST' && p === '/api/guard/calibration') {
+    const cal = voice.calibration(briefing.generate());
+    try { fs.writeFileSync(path.join(__dirname, 'state', 'calibration.json'), JSON.stringify(cal, null, 1)); } catch (e) { /* disposable */ }
+    return send(res, 200, { calibration: cal });
   }
 
   if (p === '/api/night/run') {
