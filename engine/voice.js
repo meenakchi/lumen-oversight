@@ -575,6 +575,13 @@ const TALLY = path.join(__dirname, '..', 'state', 'guard-tally.json');
 function tally(run) {
   let t = { runs: 0, caught: 0, by_reason: {}, invented_figures: [], breach_claims: 0, since: null, last_run: null };
   try { t = Object.assign(t, JSON.parse(fs.readFileSync(TALLY, 'utf8'))); } catch (e) { /* first run */ }
+  // canonicalise a tally written before figures were normalised, so the same value
+  // never appears twice in the headline list (12 and 12%)
+  if (Array.isArray(t.invented_figures)) {
+    const seen = new Set(); const clean = [];
+    for (const x of t.invented_figures) { const k = norm(x); if (k && !seen.has(k)) { seen.add(k); clean.push(k); } }
+    t.invented_figures = clean;
+  }
   if (run) {
     t.runs += 1;
     if (run.caught) {
@@ -587,7 +594,12 @@ function tally(run) {
         t.by_reason[k] = (t.by_reason[k] || 0) + 1;
         if (k === 'claimed the leak happened') t.breach_claims += 1;
       }
-      for (const o of run.offenders || []) if (!t.invented_figures.includes(o)) t.invented_figures.push(o);
+      for (const o of run.offenders || []) {
+        // the same number arrives as 12, 12% and 1,200 depending on how the model typed it;
+        // the list is a summary of values, so keep one canonical entry per value
+        const k = norm(o);
+        if (k && !t.invented_figures.some((x) => norm(x) === k)) t.invented_figures.push(k === String(o) ? o : k);
+      }
     }
     t.since = t.since || run.ran_at;
     t.last_run = run.ran_at;

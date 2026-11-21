@@ -669,7 +669,7 @@ function renderPlatform() {
   const numbers = [
     { v: `${last.used || 0}/${last.total || 10}`, l: 'brief sentences phrased by the model', s: last.calls + ' calls \u00b7 ' + ((last.tokens || {}).pt || 0) + '+' + ((last.tokens || {}).ct || 0) + ' tokens' },
     { v: String(last.rejected || 0), l: 'sentences thrown away in the current brief', s: (last.rejected ? 'deterministic wording published instead' : 'this batch stayed inside the facts \u2014 the temptation runs below are the stress test') },
-    { v: T.runs ? `${T.caught}/${T.runs}` : '\u2013', l: 'temptation sentences the guard threw away, all-time', s: whyBreak || 'the model is dared to invent a figure, and to claim the leak already happened' },
+    { v: T.runs ? `${T.caught}/${T.runs}` : '\u2013', l: 'temptation sentences thrown away (accumulator, since its rebuild)', s: (whyBreak || 'the model is dared to invent a figure, and to claim the leak already happened') + (T.note ? ' · note in state/guard-tally.json' : '') },
     { v: '0', l: 'decisions made by the model', s: 'verdicts come from policy.json only' },
     { v: CAL ? `${(CAL.truths_passed || 0) + (CAL.lies_caught || 0)}/${CAL.truths_total + CAL.lies_total}` : '\u2013', l: 'calibration rows behaving as expected', s: CAL ? `${CAL.truths_passed}/${CAL.truths_total} true sentences passed \u00b7 ${CAL.lies_caught}/${CAL.lies_total} fabrications rejected` : 'press Run calibration' },
   ];

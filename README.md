@@ -63,8 +63,8 @@ Live numbers, read off the app rather than typed into a deck. The last generatio
 brief sentences and the guard threw away **0** \u2014 which is the correct result for a wording model that was
 also given the negation rule, and it is *not* the number to be impressed by. The interesting counts are the
 adversarial ones: **3 of 3** calibration fabrications rejected and **3 of 3** true sentences allowed through,
-and **14 of 15** tempted sentences thrown away (7 false leak claims, 7 unsupported consequences, 5 invented
-figures, several overlapping). The Platform tab prints each of those with the sentence that was discarded.
+and **20 of 22** tempted sentences thrown away (10 false leak claims, 10 unsupported consequences, 10 invented
+figures, several overlapping) — those counts move every time anyone presses a dare, so trust the Platform tab over this paragraph. The Platform tab prints each of those with the sentence that was discarded.
 
 There is a third number worth knowing: the two rejections the previous generation produced were **false
 positives of mine**, not fabrications of the model. They are named in full below, because a guard that cries
@@ -141,7 +141,7 @@ clone look pre-cooked.
 
 **Committed, because they are the evidence:** `state/schedule.json` (the two cloud schedules plus what the
 last scheduled run actually delivered), `state/adversarial.json` (rolling record of the temptation runs and
-the sentences the guard threw away) and `state/guard-tally.json` (the all-time count). Delete them and the
+the sentences the guard threw away) and `state/guard-tally.json` (the accumulator, carrying a note explaining that it was rebuilt from the recorded runs after one of my tests double-counted it). Delete them and the
 Platform tab honestly reports "no runs yet" instead of showing numbers it did not earn; press either dare
 button and it refills within about fifteen seconds.
 
