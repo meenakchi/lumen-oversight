@@ -1,4 +1,4 @@
-# Morning Brief — the oversight agent for a one-person company
+# Morning Brief — the oversight agent for a one-person company
 
 Track 2 (AI Governance, Security & Decision-Making) · AvePoint challenge **Agents Watching Agents**
 Source: https://github.com/meenakchi/lumen-oversight
