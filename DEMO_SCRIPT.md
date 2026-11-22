@@ -41,17 +41,31 @@ Read in Mei's voice, over screen recordings of the brief → evidence drawer →
 
 ## Submission checklist (deadline 23 Nov, 23:59 SGT)
 
-- [x] Live application built in QwenWork — this app (`output/lumen-oversight`).
-- [x] Platform depth, visible in the UI: model-written brief wording, audited by a number guard; two
-      cloud schedules registered (weekday 08:05 SGT delivery, nightly 02:00 SGT self-test), with the
-      last scheduled run and what it delivered shown on the Platform tab.
-- [ ] Deployed URL + credentials-free access for judges (the app reads `PORT`, seeds its own night on boot, needs no login). Note: the model-phrased wording needs
-      QwenWork credentials in the runtime. Anywhere else the app says so on screen and keeps its
-      deterministic sentences — it never fakes a model call.
-- [ ] 3-minute demo video — the silent captioned walkthrough in `output/morning-brief-walkthrough.webm` covers
-      all nine beats as b-roll; the submission cut needs a voiceover (or on-screen text) and ideally 30fps, so
-      record your own pass over `npm start` if you have 20 minutes and want it to look like a product, not a capture. (script above) — record the run order, don't cut the pauses.
-- [ ] One piece of generated content: the 60-second briefing (script above).
-- [ ] Investor/summary deck — 8 slides: problem, the four traps, the gate diagram, evidence
-      screenshots, the 15+15 scoreboard, PDPA/never-not-overridable, QwenWork platform usage, ask.
-- [ ] Website built with Hashmeta AI (15% of the score) — not started yet.
+- [x] **Live application, no login for judges** — https://lumen-oversight.onrender.com
+      Reads `PORT`/`HOST`, seeds its own night on boot, needs no credentials. On a host without a
+      model credential the app says so on screen and keeps its deterministic sentences; it never
+      implies a call it did not make (see the `Wording:` line and the Platform tab).
+- [x] **Platform depth, visible in the UI** — model-written brief wording audited by a number
+      guard; two cloud schedules registered (weekday 08:05 SGT delivery, nightly 02:00 SGT
+      self-test) with the last scheduled run and what it delivered on the Platform tab.
+- [x] **Demo video** — https://youtu.be/dNTNt5ohOzs (unlisted). 2:39, twelve captioned beats,
+      captured from the running app and encoded inside a QwenWork session; scripted voiceover is
+      optional because every beat is captioned (`output/morning-brief-walkthrough.webm`).
+- [x] **One piece of generated content: the 60-second briefing film**
+      (`output/morning-brief-60s.mp4`, exactly 60.0 s) — 36.5 s of real screens under a camera
+      move, 19.5 s of rendered fact cards, 4.0 s of Seedance 2.5 atmosphere plus its audio bed.
+      No generated frame carries a number or a hash; why is recorded in `README.md`.
+- [x] **Website built with Hashmeta AI** — https://morning-brief.geo.hashmeta.tech/
+      Its four caught-item verdicts now agree with the running app (SGD 700 blocked; SGD 720,
+      SGD 8,040 and SGD 1,200 held), and the invented rule ids and example hash that an earlier
+      build printed have been removed. `../site-fix/gen.py` regenerates the correct copy by
+      reading `/api/brief`, `/api/policy` and `/api/integrity`, so the page can be re-checked
+      against the product at any time.
+- [ ] **Optional: investor/summary deck** — 8 slides: problem, the four traps, the gate diagram,
+      evidence screenshots, the 15+15 scoreboard, "a NEVER has no release button", QwenWork usage,
+      the ask. Not a rubric item; useful if the top-10 live pitch on 11 Dec happens.
+- [ ] **Optional, highest remaining platform value: publish as a QwenWork Page.** The app is
+      already Page-runtime-compatible (read-only tree, `XDG_DATA_HOME` writes, `/healthz`), but a
+      new Page must be built on the platform's Vite + React scaffold, so it is a client rewrite,
+      and the deck's "database-backed" line would want the attached database. Documented honestly
+      in `README.md` rather than claimed.

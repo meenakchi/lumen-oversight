@@ -229,5 +229,38 @@ t('changing the rulebook changes the decision (policy.json is the source)', () =
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+t('a malformed gate ask is refused before it can mint an audit row', () => {
+  // a JSON array is typeof "object", so this used to be evaluated and recorded
+  assert.strictEqual(gate.askShapeOk([1, 2, 3]), false);
+  assert.strictEqual(gate.askShapeOk({ actor: 'sales' }), false);
+  assert.strictEqual(gate.askShapeOk({ action: '   ' }), false);
+  assert.strictEqual(gate.askShapeOk(null), false);
+  assert.strictEqual(gate.askShapeOk({ action: 'send_email', actor: 'sales' }), true);
+});
+t('the live-gate ledger is capped, never pruned', () => {
+  // A public demo host cannot be allowed to grow the audit trail without bound, but dropping
+  // rows to save space is the failure this product detects in others. So: refuse, don't evict.
+  const tmp = require('os').tmpdir() + '/simcap-' + Date.now();
+  require('fs').mkdirSync(tmp, { recursive: true });
+  const script = `const l = require('./engine/ledger'); l.init();
+    const base = l.entries().length;   // a cold data dir still serves the committed night
+    let ok = 0, full = null;
+    for (let i = 0; i < 45; i++) {
+      const r = l.add({ decision: 'ALLOW', rules: [], actor: 'sales', action: 'send_email', sim: true,
+        ownerLine: 'probe', files: [], evidence: [], flags: [], claims: [], stake: [] },
+        { idempotency: 'ask:' + i });
+      if (r.full) { full = r; break; } ok++;
+    }
+    console.log(JSON.stringify({ ok, full: !!full, base, entries: l.entries().length, cap: full && full.limit }));`;
+  const out = require('child_process').execFileSync('node', ['-e', script], {
+    cwd: path.join(__dirname, '..'), env: Object.assign({}, process.env, { OVERSIGHT_DATA_DIR: tmp }), encoding: 'utf8',
+  });
+  const r = JSON.parse(out.trim().split('\n').pop());
+  require('fs').rmSync(tmp, { recursive: true, force: true });
+  assert.strictEqual(r.ok, 40, 'expected exactly 40 live-gate rows accepted, got ' + r.ok);
+  assert.strictEqual(r.full, true, 'the 41st row should have been refused, not silently dropped');
+  assert.strictEqual(r.entries, r.base + 40, 'a refusal must not add a row, and nothing pre-existing may vanish');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

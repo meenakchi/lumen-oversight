@@ -44,6 +44,34 @@ function readBody(req) {
     req.on('error', rej);
   });
 }
+/* Public, unauthenticated, and some endpoints spend real tokens. Two limits, both in-process
+   and both reported honestly instead of failing as a mystery 500: a per-visitor budget on the
+   model-spending routes, and one in-flight call at a time so a click-flood cannot queue an
+   unbounded pile of upstream requests on a free instance. */
+const BUDGET_PER_MIN = 12;
+const spend = new Map();
+let modelInflight = 0;
+function spendAllowed(req) {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'anon';
+  const now = Date.now();
+  const w = spend.get(ip) || { n: 0, since: now };
+  if (now - w.since > 60000) { w.n = 0; w.since = now; }
+  if (w.n >= BUDGET_PER_MIN) {
+    spend.set(ip, w);
+    return { ok: false, why: 'budget', retryIn: Math.max(1, Math.ceil((60000 - (now - w.since)) / 1000)) };
+  }
+  w.n += 1;
+  spend.set(ip, w);
+  if (modelInflight >= 1) return { ok: false, why: 'busy' };
+  return { ok: true };
+}
+/** Run one model-spending call under the in-flight cap. */
+async function withModelSlot(fn) {
+  modelInflight += 1;
+  try { return await fn(); } finally { modelInflight -= 1; }
+}
+const sendErr = (res, code, msg, extra) => send(res, code, Object.assign({ error: msg }, extra || {}));
+
 const send = (res, code, obj) => {
   const body = JSON.stringify(obj);
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-length': Buffer.byteLength(body) });
@@ -120,14 +148,27 @@ async function api(req, res, url) {
 
   if (p === '/api/gate') {
     const body = await readBody(req);
+    // A JSON array is an object in JS, so a malformed payload used to be accepted and mint a
+    // permanent audit row for an action that never happened. The trail must only hold shape.
+    if (!gate.askShapeOk(body)) {
+      return sendErr(res, 400, 'a gate ask needs an object with an action, e.g. { "action": "send_email", "actor": "sales", "files": [] }');
+    }
     const rec = gate.evaluate({ ...body, model: 'live' });
     rec.actorName = ({ marketing: 'Marketing agent', sales: 'Sales agent', ops: 'Ops agent', finance: 'Finance agent', support: 'Support agent', ops2: 'Ops agent' })[body.actor] || 'A worker agent';
     rec.ask = true;
     rec.sim = true;
     rec.purpose = body.intent || 'asked at the gate, live';
-    const entry = ledger.add(rec, { idempotency: 'ask:' + Date.now() + ':' + Math.random().toString(36).slice(2, 6) }).entry;
+    const out = ledger.add(rec, { idempotency: 'ask:' + Date.now() + ':' + Math.random().toString(36).slice(2, 6) });
+    if (out.full) {
+      // No rows are evicted: an append-only trail that drops history to save space is the exact
+      // failure this product exists to catch. The reset is the one the product already offers.
+      return sendErr(res, 429, 'the demo ledger is full (' + out.sim + ' live gate rows)', {
+        cap: out.limit,
+        note: 'Nothing was deleted. Press Replay the night to restore the seeded 18 rows.',
+      });
+    }
     try { require('./engine/integrity').chainBuild(); } catch (e) { /* the chain is rebuilt on boot too; a failure here must not lose the decision */ }
-    return send(res, 200, { entry, brief: voice.apply(briefing.generate()) });
+    return send(res, 200, { entry: out.entry, brief: voice.apply(briefing.generate()) });
   }
 
   if (p === '/api/scenario') {
@@ -139,13 +180,18 @@ async function api(req, res, url) {
 
 
   if ((req.method === 'POST') && (p === '/api/guard/tempt' || p === '/api/voice/adversarial')) {
+    const permit = spendAllowed(req);
+    if (!permit.ok) {
+      return sendErr(res, 429, permit.why === 'busy' ? 'a model call is already running on this instance' : 'rate limit reached for this visitor',
+        permit.retryIn ? { retry_in_seconds: permit.retryIn } : null);
+    }
     const body = await readBody(req);
     const b = briefing.generate();
     const cand = b.sections.filter((s) => s.key !== 'allowed').flatMap((s) => s.items)
       .find((i) => i.stake && i.stake.length) || b.items[0];
     const fact = voice.factsFor(cand);
     try {
-      const run = await voice.adversarial(fact, body.mode);
+      const run = await withModelSlot(() => voice.adversarial(fact, body.mode));
       voice.tally(run);
       const prev = ((paths.read('adversarial.json') || {}).runs) || [];
       if (!paths.write('adversarial.json', { runs: [run].concat(prev).slice(0, 12) })) {
@@ -162,6 +208,17 @@ async function api(req, res, url) {
   if (req.method === 'POST' && p === '/api/voice/refresh') {
     const body = await readBody(req);
     const b = briefing.generate();
+    // A warm cache is served for free; only a call that will actually reach the model is metered.
+    const willSpend = voice.enabled() && (body.force || !voice.hasFreshCache());
+    if (willSpend) {
+      const permit = spendAllowed(req);
+      if (!permit.ok) {
+        return sendErr(res, 429, permit.why === 'busy' ? 'a model call is already running on this instance' : 'rate limit reached for this visitor',
+          permit.retryIn ? { retry_in_seconds: permit.retryIn } : null);
+      }
+      const v = await withModelSlot(() => voice.refresh(b, Boolean(body.force)));
+      return send(res, v.error ? 502 : 200, { voice: v, brief: voice.apply(briefing.generate()) });
+    }
     const v = await voice.refresh(b, Boolean(body.force));
     return send(res, v.error ? 502 : 200, { voice: v, brief: voice.apply(briefing.generate()) });
   }
@@ -194,17 +251,23 @@ function serve(req, res, url) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed', got: url.pathname });
   const rel = url.pathname === '/' ? '/index.html' : path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, '');
   const file = path.join(PUB, rel);
-  if (!file.startsWith(PUB)) { res.writeHead(403); return res.end('forbidden'); }
+  // startsWith(PUB) would also pass a sibling directory whose name merely begins with PUB, so
+  // compare the resolved path against the served root instead.
+  const within = path.relative(PUB, path.resolve(file));
+  if (within.startsWith('..') || path.isAbsolute(within)) { res.writeHead(403); return res.end(req.method === 'HEAD' ? undefined : 'forbidden'); }
   fs.readFile(file, (err, buf) => {
-    if (err) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
-    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
+    if (err) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end(req.method === 'HEAD' ? undefined : 'not found'); }
+    const type = MIME[path.extname(file)] || 'application/octet-stream';
     if (/\.html$/.test(file)) {
       const html = buf.toString('utf8')
         .replace('/app.js', `/app.js?v=${assetVersion('app.js')}`)
         .replace('/styles.css', `/styles.css?v=${assetVersion('styles.css')}`);
-      return res.end(html);
+      // HEAD replies must carry the length of the GET they describe, and no body
+      res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store', 'content-length': Buffer.byteLength(html) });
+      return res.end(req.method === 'HEAD' ? undefined : html);
     }
-    res.end(buf);
+    res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store', 'content-length': buf.length });
+    res.end(req.method === 'HEAD' ? undefined : buf);
   });
 }
 
@@ -214,8 +277,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/') || url.pathname === '/health' || url.pathname === '/healthz') return await api(req, res, url);
     return serve(req, res, url);
   } catch (e) {
-    console.error(e);
-    return send(res, 500, { error: String((e && e.message) || e) });
+    const msg = String((e && e.message) || e);
+    console.error(req.method, url.pathname, msg);
+    // the detail stays in the host log: a response body is readable by whoever is probing
+    if (/payload too large/i.test(msg)) return sendErr(res, 413, 'payload too large');
+    if (/Unexpected token|not valid JSON|JSON.parse/i.test(msg)) return sendErr(res, 400, 'that body is not JSON this app can use');
+    return sendErr(res, 500, 'server error (details in the host log)');
   }
 });
 

@@ -42,10 +42,25 @@ function getState() {
   return state || init();
 }
 
+// Live gate probes are the demo's most written-to row type, and this host is public and
+// unauthenticated: nine clicks already meant nine permanent audit rows. Left alone, a busy
+// judge or a script grows the ledger without bound and every append rebuilds the hash chain
+// over a longer file. The fix is deliberately NOT eviction - dropping rows from an append-only
+// trail to save space is the exact failure this product exists to catch - so the trail simply
+// refuses new sim rows once the demo budget is spent, says so, and points at the reset that is
+// already part of the product (Replay the night). Nightly and seeded rows are never capped.
+const MAX_SIM_ROWS = 40;
+const isSim = (e) => e && (e.sim === true || (e.idempotency || '').startsWith('ask:'));
+
 function add(record, meta) {
   const s = getState();
   const dupe = meta && meta.idempotency ? s.entries.find((e) => e.idempotency === meta.idempotency) : null;
   if (dupe) return { entry: dupe, reused: true };
+  if (record && (record.sim || (meta && meta.idempotency || '').startsWith('ask:'))) {
+    if (s.entries.filter(isSim).length >= MAX_SIM_ROWS) {
+      return { full: true, limit: MAX_SIM_ROWS, sim: s.entries.filter(isSim).length };
+    }
+  }
   seq += 1;
   const id = 'E' + String(seq).padStart(3, '0');
   const entry = {

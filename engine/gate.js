@@ -43,9 +43,43 @@ const CODE = { ALLOW: 'ALLOW', APPROVE: 'HOLD', NEVER: 'BLOCK' };
 const norm = (s) => String(s || '').toLowerCase().replace(/[.,]/g, '').trim();
 const pay = 'pay_supplier';
 
+/* Rule code must never have to know whether a caller said "file" or "files".
+   A model-authored or hand-typed ask can arrive in any of these shapes:
+     { files: ["a.csv"] }   { file: "a.csv" }   { files: "a.csv" }   { attachments: [...] }
+     { targets: [...] }     { files_touched: [...] }   { path: "a.csv" }   { target: "a.csv" }
+   Before this normaliser, `files: [...]` alone was read by some rules as "no file at all":
+   asking to hand admin/client_list.csv to SparkMail using the plural form came back HOLD under
+   R14 ("internal file") instead of BLOCK under R15. A missed violation is the one thing this
+   layer is not allowed to do, so every path reaches the rules as one clean list.
+   Unknown paths are still reported as internal+missing by the classifier below; nothing here
+   upgrades an unnamed file into regulated evidence. */
+const FILE_KEYS = ['files', 'file', 'attachments', 'attachment', 'targets', 'target_files', 'files_touched', 'path'];
+function listOf(x) { return x == null ? [] : (Array.isArray(x) ? x : [x]); }
+function normFiles(input) {
+  const out = [];
+  for (const k of FILE_KEYS) for (const p of listOf(input && input[k])) {
+    const t = typeof p === 'string' ? p.trim() : '';
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+const LEVEL_RANK = { public: 0, internal: 1, 'client-confidential': 2, regulated: 3 };
+
+/** The file a decision is really about: the most sensitive one the ask listed. Used both by the
+ *  rules and by the sentence that gets displayed, so a BLOCK can never be captioned with the
+ *  public file that happened to be first in the list. Returns null when nothing was listed -
+ *  callers must not invent a subject. */
+function primaryFileInfo(input) {
+  const infos = fileInfos(normFiles(input));
+  if (!infos.length) return null;
+  return infos.slice().sort((a, b) => (LEVEL_RANK[b.level] ?? 1) - (LEVEL_RANK[a.level] ?? 1))[0];
+}
+
 function fileInfos(paths) {
   const c = corpus();
-  return (paths || []).map((p) => {
+  const list = (typeof paths === 'string' || Array.isArray(paths)) ? paths : normFiles(paths || {});
+  return listOf(list).filter(Boolean).map((p) => {
     const f = c.byPath.get(p);
     if (!f) return { path: p, missing: true, level: 'internal', drivers: [] };
     const r = classify.classifyFile(f);
@@ -186,10 +220,23 @@ const PRICE_TALK = /\b(match|offer|quote|price|fee|surcharge|discount|50%|total|
 const TERMS = /\b(settle at|accepting?\s+\d|waive|write[- ]off|in full and final|reduced (?:payment|fee)|we accept)\b/i;
 
 // ================================================================ the gate ==
+/** Is this a shape the ledger may record? A JSON array is an "object" in JS, so a stray
+ *  `[1,2,3]` used to be evaluated and mint a permanent audit row for an action that never
+ *  happened. Validation lives here, not in the HTTP layer, so it is testable in isolation. */
+const NEEDS_SUBJECT = ['upload', 'upload_to_external_tool', 'delete_file', 'share_file'];
+function askShapeOk(b) {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+  if (typeof b.action !== 'string' || !b.action.trim()) return false;
+  // an upload or a delete that names no file has no subject: there is nothing to classify, no
+  // evidence to cite and no decision worth recording, so the ask is refused rather than guessed
+  if (NEEDS_SUBJECT.includes(String(b.action).toLowerCase()) && normFiles(b).length === 0) return false;
+  return true;
+}
+
 function evaluate(input) {
   const c = corpus();
   const action = String(input.action || '').toLowerCase();
-  const files = input.files || [];
+  const files = normFiles(input);
   const info = fileInfos(files);
   const level = levelFor(info, input.body);
   const scope = scopeCheck(files, input.scope);
@@ -224,7 +271,15 @@ function evaluate(input) {
   // ---- R13-R15 · upload_to_external_tool -------------------------------
   if (action.startsWith('upload')) {
     const tool = EXTERNAL_TOOLS[input.target] || { name: input.target, retainsData: true, purpose: 'service not on the studio list' };
-    const f = fileInfos([input.file])[0] || { path: input.file, level: 'regulated', drivers: [] };
+    // most sensitive wins: an upload that carries client_list.csv alongside a blog post is
+    // still an upload of client_list.csv
+    // no subject, no violation: an upload that names no file cannot be evidenced, and claiming
+    // "regulated" for a path nobody named would be the same fabrication this layer reports in prose
+    const f = primaryFileInfo(input);
+    if (!f) {
+      hits.push(ruleHit('R15', 'The ask named no file, so there is nothing to classify and nothing the owner can approve.', []));
+      notes.push('upload with no file named: nothing was decided about data sensitivity because no data was named');
+    } else {
     if (atLeast(f.level, 'client-confidential')) {
       hits.push(ruleHit('R15', `${f.path} is ${LABEL[f.level].toLowerCase()} data. Nothing at that level goes to an external tool, and ${tool.name} retains what it is handed.`, [
         ev(f.path, f.drivers && f.drivers[0] ? f.drivers[0].quote : null, `classified ${LABEL[f.level].toLowerCase()} by content, not by its header`),
@@ -237,11 +292,12 @@ function evaluate(input) {
     } else {
       hits.push(ruleHit('R13', `${f.path} is public material, built to be published.`, [ev(f.path, f.drivers && f.drivers[0] ? f.drivers[0].quote : null, LABEL.public)]));
     }
+    }
   }
 
   // ---- R16 / R17 · delete_file ----------------------------------------
   if (action === 'delete_file') {
-    const targets = input.targets || [input.file].filter(Boolean);
+    const targets = normFiles({ targets: input.targets, files: input.files, file: input.file });
     const infos = fileInfos(targets);
     const money = infos.map((i) => c.receivables.find((r) => r.file === i.path && /UNPAID/i.test(r.status))).filter(Boolean);
     const total = money.reduce((s, r) => s + (r.amount || 0), 0);
@@ -447,8 +503,14 @@ const SUBJECT = {
 function activityFor(input, decision) {
   const a = String(input.action).toLowerCase();
   const stopped = decision === 'BLOCK', held = decision === 'HOLD';
-  const file = input.file ? String(input.file).split('/').pop() : null;
-  const targets = (input.targets || (input.file ? [input.file] : [])).map((p) => String(p).split('/').pop());
+  const listedFiles = normFiles(input);
+  const base = (p) => String(p).split('/').pop();
+  // the sentence must name the file the decision was actually about: the most sensitive one
+  // listed, not whichever happened to come first (a public blog post alongside a client list
+  // used to be captioned as if the blog post were what got stopped)
+  const primary = primaryFileInfo(input);
+  const file = primary ? base(primary.path) : (listedFiles.length ? base(listedFiles[0]) : null);
+  const targets = listedFiles.map(base);
   const tool = (EXTERNAL_TOOLS[input.target] || { name: input.target }).name;
   const money = (n) => 'SGD ' + Number(n || 0).toLocaleString();
   const lead = (tryV, wantV, didV) => stopped ? tryV : held ? wantV : didV;
@@ -457,7 +519,7 @@ function activityFor(input, decision) {
       return `${lead('wrote', 'drafted', 'sent')} an email to ${input.to}`;
     case 'upload_to_external_tool':
     case 'upload':
-      return `${lead('tried to hand', 'wanted to hand', 'handed')} ${file} to ${tool}`;
+      return `${lead('tried to hand', 'wanted to hand', 'handed')} ${file || 'a file nobody named'} to ${tool || 'an outside tool'}`;
     case 'delete_file':
       return `${lead('tried to delete', 'wanted to delete', 'deleted')} ${targets.slice(0, 2).join(' and ')}${targets.length > 2 ? ` and ${targets.length - 2} more` : ''}`;
     case 'pay_supplier':
@@ -467,7 +529,8 @@ function activityFor(input, decision) {
     case 'quote_price':
       return `${lead('offered', 'drafted', 'sent')} a quote of ${money(input.amount)}${input.to ? ' to ' + String(input.to).split('@')[0] : ''}`;
     case 'read_file':
-      return `opened ${(input.files || []).length} file${(input.files || []).length === 1 ? '' : 's'}`;
+      const n = normFiles(input).length;
+      return `opened ${n} file${n === 1 ? '' : 's'}`;
     default:
       return `${a} ${input.intent || ''}`.trim();
   }
@@ -492,12 +555,13 @@ function ownerLine(input, decision, hits, level) {
   const activity = activityFor(input, decision);
   const quiet = hits.find((h) => h.blocking === false && h.decision === 'NEVER');
   if (decision === 'ALLOW' && quiet) {
-    const reg = fileInfos(input.files).filter((f) => f.level === 'regulated');
+    const listedFiles = normFiles(input);
+    const reg = fileInfos(listedFiles).filter((f) => f.level === 'regulated');
     const needed = (input.scope || []).length;
-    const total = (input.files || []).length;
+    const total = listedFiles.length;
     const job = input.task || input.intent || 'the task';
     return total === 1
-      ? `${who} opened ${String(input.files[0]).split('/').pop()} for a job that never needed it (logged under ${quiet.id}): that file is regulated, and the job on hand \u2014 ${(input.task || input.intent || 'an ordinary task').toLowerCase()} \u2014 does not require it. Nothing was sent from it \u2014 the open itself is why you are reading this.`
+      ? `${who} opened ${String(listedFiles[0]).split('/').pop()} for a job that never needed it (logged under ${quiet.id}): that file is regulated, and the job on hand \u2014 ${(input.task || input.intent || 'an ordinary task').toLowerCase()} \u2014 does not require it. Nothing was sent from it \u2014 the open itself is why you are reading this.`
       : `${who} ${activity} for a job that needed ${needed} file${needed === 1 ? '' : 's'} (logged under ${quiet.id}): ${reg.length} of them were regulated and outside the job \u2014 ${reg.map((f) => String(f.path).split('/').pop()).join(', ')}. Nothing was sent from them. The open itself is why you are reading this.`;
   }
   const want = decision === 'BLOCK' ? 'NEVER' : decision === 'HOLD' ? 'APPROVE' : 'ALLOW';
@@ -507,7 +571,7 @@ function ownerLine(input, decision, hits, level) {
   const a = String(input.action).toLowerCase();
   let why = (hits.find((h) => h.id === key) || {}).whyShort || SHORT_WHY[key] || SHORT_WHY.R01;
   if (key === 'R15') {
-    const roster = String(input.file || (input.files || []).join(',')).includes('client_list');
+    const roster = normFiles(input).join(',').includes('client_list');
     why = roster
       ? `the studio\u2019s whole client list \u2014 names, emails and phone numbers of 6 identifiable people \u2014 was about to leave the building, and ${EXTERNAL_TOOLS[input.target] ? EXTERNAL_TOOLS[input.target].name + ' keeps whatever it is given' : 'that tool keeps whatever it is given'}`
       : `client data was about to be handed to an outside tool that keeps whatever it is given`;
@@ -520,7 +584,7 @@ function ownerLine(input, decision, hits, level) {
 function buildTrace(input, s) {
   const step = (key, label, lines, result) => ({ key, label, lines, result });
   return [
-    step('who', 'Who wanted it, and why', [`${SUBJECT[input.actor] || input.actor || 'A worker agent'}: ${input.task || input.intent || '(no stated task)'}`, input.to ? `outbound to ${input.to}` : null, input.file ? `touches ${input.file}` : null, input.targets ? `touches ${input.targets.join(', ')}` : null].filter(Boolean), `${SUBJECT[input.actor] || input.actor} \u00b7 ${(input.task || input.intent || 'no stated task').slice(0, 46)}`),
+    step('who', 'Who wanted it, and why', [`${SUBJECT[input.actor] || input.actor || 'A worker agent'}: ${input.task || input.intent || '(no stated task)'}`, input.to ? `outbound to ${input.to}` : null, normFiles(input).length ? `touches ${normFiles(input).join(', ')}` : null].filter(Boolean), `${SUBJECT[input.actor] || input.actor} \u00b7 ${(input.task || input.intent || 'no stated task').slice(0, 46)}`),
     step('classify', 'What kind of data?', s.info.length ? s.info.map((f) => `${f.path} \u2192 ${LABEL[f.level]}${f.declaredMatch === false ? ' (header disagrees)' : ''}`) : ['no files attached \u2014 the content of the message was scanned instead'], LABEL[s.level]),
     step('scope', 'Did the task need it?', s.scope.rows.length ? s.scope.rows.map((r) => `${r.path} \u2192 ${r.inScope ? 'in scope' : 'OUT of scope'} (${LABEL[r.level]})`) : ['nothing was read for this action'], s.scope.outside.length ? `${s.scope.outside.length} outside scope` : 'all in scope'),
     step('policy', "What does the owner's policy say?", s.hits.map((h) => `${h.id} ${h.decision} \u2014 ${h.why}`), s.hits.map((h) => h.id + ' ' + h.decision).join(', ') || 'no rule matched'),
@@ -546,7 +610,7 @@ function rewriteSuggestion(rec, input) {
   if (ids.includes('R08')) return "Safe alternative to put in front of the client: counter at the owner's floor \u2014 'we can do SGD 6,500 with the timeline unchanged'; held for the owner's release.";
   if (ids.includes('R15') && String(input.file).includes('client_list')) return 'Safe alternative: ask SparkMail whether they retain data, then use only public marketing copy, or export a list the owner has approved, with no phone numbers or NRICs.';
   if (ids.includes('R15')) return 'Safe alternative: hand over public marketing assets only, and keep client data inside the studio.';
-  if (ids.includes('R16')) return 'Safe alternative: archive rather than delete, and chase the two unpaid invoices instead \u2014 the money is still owed.';
+  if (ids.includes('R16')) return 'Safe alternative: archive rather than delete, and chase the unpaid invoices instead — the count is in the audit row \u2014 the money is still owed.';
   if (ids.includes('R12')) return 'Safe alternative: a reply that says "holding the print slot until Daniel confirms in writing" \u2014 no spend committed.';
   if (ids.includes('R05')) return 'Safe alternative: send it once the owner adds this party to the supplier list, or with the public case study only.';
   if (ids.includes('R09')) return 'Safe alternative: reply with what you can do without changing money or terms, put the settlement decision in the queue.';
@@ -556,4 +620,4 @@ function rewriteSuggestion(rec, input) {
   return 'Safe alternative: send nothing, and ask the owner.';
 }
 
-module.exports = { evaluate, truthCheck, claimsFrom, recipientOf, scopeCheck, fileInfos, EXTERNAL_TOOLS, NOT_PUBLIC, OWNER_CONFIRMATIONS, levelFor, d0 };
+module.exports = { evaluate, truthCheck, claimsFrom, recipientOf, scopeCheck, fileInfos, EXTERNAL_TOOLS, NOT_PUBLIC, OWNER_CONFIRMATIONS, levelFor, d0, askShapeOk };

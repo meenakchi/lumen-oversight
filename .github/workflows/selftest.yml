@@ -127,3 +127,69 @@ jobs:
             console.log("integration OK");
           })().catch((e) => { console.error("FAIL: " + (e && e.message)); process.exit(1); });
           '
+
+      # The abuse lane. Four things a public, unauthenticated demo host must not be talked into:
+      # recording a row for an action nobody asked about, serving a file outside public/, answering
+      # HEAD with a length that disagrees with GET, and growing an append-only audit trail until the
+      # disk is gone. The last is answered by refusing new live-gate rows, never by deleting
+      # history - so the test also asserts the seeded night is still there and the chain verifies.
+      - name: 'abuse lane — malformed asks, traversal, HEAD parity, ledger cap, chain intact'
+        env:
+          OVERSIGHT_DATA_DIR: /tmp/abuse-data
+          OVERSIGHT_CRED_FILE: /nonexistent-cred-in-ci
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/abuse-data
+          PORT=3123 HOST=127.0.0.1 node server.js > /tmp/abuse.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          ready=no
+          for i in $(seq 1 60); do
+            if curl -sf -m 3 "http://127.0.0.1:3123/healthz" >/dev/null; then ready=yes; break; fi
+            sleep 1
+          done
+          [ "$ready" = yes ] || { echo "::error::app did not answer /healthz"; sed -n '1,80p' /tmp/abuse.log; exit 1; }
+          B=http://127.0.0.1:3123
+          ASK='{"actor":"sales","action":"send_email","to":"someone@outside.example","files":[],"body":"SGD 9,999 please"}'
+
+          code=$(curl -s -o /tmp/a1.json -w '%{http_code}' -X POST "$B/api/gate" -H 'content-type: application/json' -d '[1,2,3]')
+          [ "$code" = 400 ] || { echo "::error::array body returned $code"; exit 1; }
+          code=$(curl -s -o /tmp/a2.json -w '%{http_code}' -X POST "$B/api/gate" -H 'content-type: application/json' -d '{"actor":"sales"}')
+          [ "$code" = 400 ] || { echo "::error::actionless body returned $code"; exit 1; }
+          echo "malformed asks refused with 400 (no audit row minted for an action nobody asked about)"
+
+          for u in "/%2e%2e/%2e%2e/server.js" "/..%2fserver.js" "/../server.js"; do
+            c=$(curl -s --path-as-is -o /tmp/a3.txt -w '%{http_code}' "$B$u")
+            if grep -q "createServer" /tmp/a3.txt; then echo "::error::leaked source via $u"; exit 1; fi
+            [ "$c" != 200 ] || { echo "::error::served $u"; exit 1; }
+          done
+          echo "nothing outside public/ is served"
+
+          gl=$(curl -s -o /dev/null -w '%{size_download}' "$B/")
+          hl=$(curl -s -I "$B/" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}')
+          [ "$hl" = "$gl" ] || { echo "::error::HEAD content-length $hl != GET body $gl"; exit 1; }
+          echo "HEAD is bodyless and agrees with GET on length ($gl bytes)"
+
+          refused=no
+          for i in $(seq 1 46); do
+            c=$(curl -s -o /tmp/a4.json -w '%{http_code}' -X POST "$B/api/gate" -H 'content-type: application/json' -d "$ASK")
+            if [ "$c" = 429 ]; then refused=yes; break; fi
+          done
+          [ "$refused" = yes ] || { echo "::error::the live-gate ledger grew past its cap without refusing"; exit 1; }
+          grep -q "Nothing was deleted" /tmp/a4.json || { echo "::error::the refusal does not state that history was kept"; exit 1; }
+          echo "live-gate rows capped; refusal states nothing was deleted"
+
+          curl -s "$B/api/integrity" -o /tmp/a5.json
+          node -e '
+            const d = JSON.parse(require("fs").readFileSync("/tmp/a5.json", "utf8"));
+            const fail = (m) => { console.error("FAIL: " + m); process.exit(1); };
+            if (d.chain.state !== "VERIFIED") fail("chain after a write storm: " + d.chain.state);
+            if (d.chain.rows !== d.chain.entries) fail("chain coverage drifted: " + d.chain.rows + " rows vs " + d.chain.entries + " entries");
+            if (!d.policy_sha) fail("no rulebook hash reported");
+            console.log("chain still VERIFIED over", d.chain.rows, "rows, under rulebook", d.policy_sha);
+          '
+
+          curl -s -X POST "$B/api/night/run" -o /dev/null
+          left=$(curl -s "$B/healthz" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.parse(s).entries))')
+          [ "$left" = 18 ] || { echo "::error::replay should restore the seeded 18 rows, found $left"; exit 1; }
+          echo "Replay the night clears demo rows and keeps the audit trail"

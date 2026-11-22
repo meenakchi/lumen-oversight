@@ -7,8 +7,10 @@ services:
     region: singapore
     buildCommand: "echo 'no dependencies to install (zero npm packages)'"
     startCommand: "node server.js"
-    healthCheckPath: /health
+    healthCheckPath: /healthz      # the platform endpoint: no credential, no write, no auth
     envVars:
+      - key: NODE_VERSION          # the app also runs on 20; pin 22 so every host is the
+        value: "22"                # same runtime the CI lane tests
       - key: OVERSIGHT_LLM_API_KEY     # optional: without it the app says so and every
         sync: false                    # sentence stays the rule engine's own wording
       - key: OVERSIGHT_LLM_BASE_URL    # optional: any OpenAI-compatible /v1 origin
