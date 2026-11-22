@@ -1,9 +1,18 @@
 /* Lumen Studio \u00b7 oversight console.
    Direction: the morning paper for one person, not a security dashboard. Warm
-   grey-green paper, ink structures, a single grotesque that can go expanded,
-   and colour spent ONLY where decision or risk lives. The one aesthetic risk is
-   the type itself: Bricolage Grotesque at width 170 for the things that must
-   land like a stamp, IBM Plex Mono for rules, times and figures. */
+   grey-green paper, ink structures, and colour spent ONLY where a decision or a
+   risk lives \u2014 three decision colours and a neutral data ramp, so a colour can
+   never mean two things on the same screen.
+
+   Type is the signature: three Bricolage Grotesque registers (condensed and
+   uppercase for the wordmark, condensed for the headline a judge reads first,
+   normal width for card titles), Source Serif 4 for the prose an owner actually
+   reads, and IBM Plex Mono for the evidence layer \u2014 rule ids, times, figures.
+
+   Note on the width axis: Bricolage Grotesque spans wdth 75..100, so it narrows,
+   it does not widen. An earlier version of this file asked for wdth 170 in six
+   places; that value is out of range, the browser clamped it, and the headline
+   treatment described here silently never rendered. Values below are in range. */
 
 :root {
   --ink: #171C18;
@@ -61,7 +70,7 @@ a { color: inherit }
 .brand { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap }
 .brand h1 {
   font-size: clamp(24px, 3.4vw, 36px);
-  font-variation-settings: 'wdth' 170, 'opsz' 40;
+  font-variation-settings: 'wdth' 75, 'opsz' 40;
   text-transform: uppercase; line-height: 1;
 }
 .brand h1 span { color: var(--block) }
@@ -115,7 +124,7 @@ main { padding: 26px 0 90px }
 .panel[hidden] { display: none }
 .belt { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-bottom: 26px }
 .belt > div { background: var(--card); padding: 12px 14px }
-.belt .v { font-family: var(--display); font-size: 28px; line-height: 1.05; font-weight: 800; letter-spacing: -.03em }
+.belt .v { font-family: var(--display); font-size: 28px; line-height: 1.05; font-weight: 800; letter-spacing: -.025em; font-variation-settings: 'wdth' 80, 'opsz' 30 }
 .belt .l { font-size: 13.5px; line-height: 1.3; color: var(--ink-soft) }
 .belt .s { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-top: 4px }
 
@@ -123,7 +132,7 @@ main { padding: 26px 0 90px }
 .next .lead { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted) }
 .brief-head { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, .6fr); gap: 34px; align-items: start; margin-bottom: 20px }
 .dateplate { font-family: var(--mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 12px }
-.brief-head h2 { font-size: clamp(30px, 5.4vw, 54px); font-variation-settings: 'wdth' 155, 'opsz' 48; font-weight: 800; letter-spacing: -.03em; line-height: .96; max-width: 21ch }
+.brief-head h2 { font-size: clamp(30px, 5.4vw, 54px); font-variation-settings: 'wdth' 78, 'opsz' 48; font-weight: 800; letter-spacing: -.03em; line-height: .96; max-width: 21ch }
 .lede { font-size: 19px; line-height: 1.5; max-width: 58ch; margin-top: 14px }
 .letter { border: 1px solid var(--line); border-left: var(--spine) solid var(--ink); border-radius: var(--radius); background: var(--card); padding: 16px 18px; box-shadow: var(--shadow); font-size: 15.5px; line-height: 1.68 }
 .letter h4 { font-family: var(--mono); font-weight: 500; font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 10px }
@@ -138,7 +147,7 @@ main { padding: 26px 0 90px }
 
 .section { margin: 30px 0 6px; scroll-margin-top: 112px }
 .section-head { display: flex; align-items: baseline; gap: 12px; border-top: 2px solid var(--ink); padding-top: 10px; margin-bottom: 12px; flex-wrap: wrap }
-.section-head h3 { font-size: 21px; font-variation-settings: 'wdth' 140 }
+.section-head h3 { font-size: 21px; font-variation-settings: 'wdth' 84 }
 .section-head .n { font-family: var(--mono); font-size: 12px; background: var(--ink); color: #fff; padding: 1px 7px; border-radius: 999px }
 .section-head .note { font-size: 13.5px; color: var(--muted); margin-left: auto; max-width: 52ch }
 
@@ -179,14 +188,14 @@ table.log tr[data-tone=allow] td:first-child { box-shadow: inset 3px 0 0 var(--a
 
 /* ---------------------------- scenario lab ------------------------------ */
 .board { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin: 4px 0 18px; box-shadow: var(--shadow) }
-.score { font-family: var(--display); font-size: 44px; font-weight: 800; letter-spacing: -.04em; line-height: 1 }
+.score { font-family: var(--display); font-size: 44px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variation-settings: 'wdth' 78, 'opsz' 44 }
 .score small { font-size: 15px; color: var(--muted); font-weight: 600 }
 .runall { display: flex; align-items: center; gap: 10px }
 .scn { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); margin-bottom: 10px; overflow: hidden }
 .scn > header { display: flex; align-items: center; gap: 10px; padding: 12px 15px; cursor: pointer; flex-wrap: wrap }
 .scn > header:hover { background: #F6F8F1 }
 .scn > header .id { font-family: var(--mono); font-size: 11.5px; color: var(--muted) }
-.scn > header h4 { font-size: 17px; font-variation-settings: 'wdth' 120; letter-spacing: -.02em; flex: 1 1 240px }
+.scn > header h4 { font-size: 17px; font-variation-settings: 'wdth' 92; letter-spacing: -.02em; flex: 1 1 240px }
 .scn > header .tag-row { margin: 0 }
 .scn .body { padding: 0 15px 14px; display: none; border-top: 1px solid var(--line-soft) }
 .scn[data-open="true"] .body { display: block }
@@ -217,7 +226,7 @@ table.rules tr.hitrow { background: rgba(166, 104, 12, .14); transition: backgro
 .bar .fill { height: 100%; border-radius: 999px }
 .acc { font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-align: right }
 .note-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 14px 16px; box-shadow: var(--shadow) }
-.note-card h4 { font-size: 17px; font-variation-settings: 'wdth' 120 }
+.note-card h4 { font-size: 17px; font-variation-settings: 'wdth' 94 }
 .note-card p { font-size: 14.5px; color: var(--ink-soft) }
 
 /* ------------------------------- the gate ------------------------------- */
@@ -259,7 +268,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--hold); outl
 .drawer.open .sheet { transform: none }
 .sheet header { padding: 16px 20px 12px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 14px; align-items: flex-start }
 .sheet .content { overflow: auto; padding: 14px 20px 60px }
-.sheet h4 { font-size: 16px; font-variation-settings: 'wdth' 120 }
+.sheet h4 { font-size: 16px; font-variation-settings: 'wdth' 94 }
 .tag-row { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin: 8px 0 }
 pre.src { font-family: var(--mono); font-size: 12.5px; line-height: 1.75; white-space: pre-wrap; margin: 0; color: var(--ink-soft); background: #fff; border: 1px solid var(--line-soft); border-radius: 8px; padding: 12px 14px }
 pre.src .ln { color: #A9B0A6; user-select: none; margin-right: 10px }
@@ -388,3 +397,7 @@ button.swap { font-size: 10.5px; padding: 3px 9px }
 .pill.bad { box-shadow: inset 0 0 0 1px var(--block); color: var(--block) }
 
 .recorded-list { display: grid; gap: 6px }
+
+.footer a { color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px }
+.footer a:hover { color: var(--ink) }
+.footer a:focus-visible { outline: 2px solid var(--hold); outline-offset: 2px }
