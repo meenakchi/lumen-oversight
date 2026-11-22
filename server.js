@@ -3,10 +3,14 @@
 'use strict';
 const http = require('http');
 const fs = require('fs');
+const paths = require('./engine/paths');
 const path = require('path');
 
 const PUB = path.join(__dirname, 'public');
 const PORT = process.env.PORT || 3000;
+// The Page runtime hands the app HOST=127.0.0.1 and expects it to bind there; Render and
+// local development bind everything as before.
+const HOST = process.env.HOST || '0.0.0.0';
 
 const gate = require('./engine/gate');
 const rules = require('./engine/rules');
@@ -53,6 +57,9 @@ async function api(req, res, url) {
     return res.end();
   }
   if (p === '/health') return send(res, 200, { ok: true, studio: 'Lumen Studio', files: c.files.length, entries: ledger.entries().length });
+  // /healthz is the platform health check: it answers before anything else, needs no
+  // credential, no write and no authentication, and reports whether the data dir is real.
+  if (p === '/healthz') return send(res, 200, { ok: true, entries: ledger.entries().length, data_dir_writable: paths.writable(), ephemeral_data: paths.ephemeral });
 
   // ---- reads ----------------------------------------------------------
   if (req.method === 'GET') {
@@ -64,7 +71,7 @@ async function api(req, res, url) {
         queueOpen: ledger.queue().filter((q) => q.status === 'waiting').length,
         board: { points: b.points, max: b.max, kit: b.kit, kitMax: b.kitMax, ours: b.custom, oursMax: b.customMax },
         canary: scenarios.canary(),
-        schedule: (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'schedule.json'), 'utf8')); } catch (e) { return null; } })(),
+        schedule: paths.read('schedule.json'),
       });
     }
     if (p === '/api/brief') { const g = voice.apply(briefing.generate()); return send(res, 200, { brief: g, text: briefing.plain(g, g.voice) }); }
@@ -82,12 +89,12 @@ async function api(req, res, url) {
     if (p === '/api/guard/record') return send(res, 200, { record: voice.readRecord() });
     if (p === '/api/guard/calibration') {
       let cal = null;
-      try { cal = JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'calibration.json'), 'utf8')); } catch (e) { cal = null; }
+      cal = paths.read('calibration.json');
       return send(res, 200, { calibration: cal });
     }
     if (p === '/api/guard/tempt' || p === '/api/voice/adversarial') {
       let runs = [];
-      try { runs = JSON.parse(fs.readFileSync(path.join(__dirname, 'state', 'adversarial.json'), 'utf8')).runs; } catch (e) { runs = []; }
+      runs = ((paths.read('adversarial.json') || {}).runs) || [];
       return send(res, 200, { runs, tally: voice.tally() });
     }
     if (p.startsWith('/api/file')) {
@@ -139,14 +146,11 @@ async function api(req, res, url) {
     const fact = voice.factsFor(cand);
     try {
       const run = await voice.adversarial(fact, body.mode);
-      const advFile = path.join(__dirname, 'state', 'adversarial.json');
       voice.tally(run);
-      let prev = [];
-      try { prev = JSON.parse(fs.readFileSync(advFile, 'utf8')).runs || []; } catch (e) { prev = []; }   // first run: nothing to read yet
-      try {
-        fs.mkdirSync(path.dirname(advFile), { recursive: true });
-        fs.writeFileSync(advFile, JSON.stringify({ runs: [run].concat(prev).slice(0, 12) }, null, 1));
-      } catch (e) { console.error('adversarial log not written:', e.message); }
+      const prev = ((paths.read('adversarial.json') || {}).runs) || [];
+      if (!paths.write('adversarial.json', { runs: [run].concat(prev).slice(0, 12) })) {
+        console.error('adversarial log kept for this instance only: the data dir is not writable');
+      }
       return send(res, 200, { run, fact: { id: cand.id, allowed: fact.allowed_numbers, stake: cand.stake, files: (cand.files || []).map((f) => f.path) } });
     } catch (e) {
       const msg = String(e.message || e);
@@ -164,7 +168,7 @@ async function api(req, res, url) {
 
   if (req.method === 'POST' && p === '/api/guard/calibration') {
     const cal = voice.calibration(briefing.generate());
-    try { fs.writeFileSync(path.join(__dirname, 'state', 'calibration.json'), JSON.stringify(cal, null, 1)); } catch (e) { /* disposable */ }
+    paths.write('calibration.json', cal); // disposable: a read-only host recomputes it
     return send(res, 200, { calibration: cal });
   }
 
@@ -207,7 +211,7 @@ function serve(req, res, url) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
-    if (url.pathname.startsWith('/api/') || url.pathname === '/health') return await api(req, res, url);
+    if (url.pathname.startsWith('/api/') || url.pathname === '/health' || url.pathname === '/healthz') return await api(req, res, url);
     return serve(req, res, url);
   } catch (e) {
     console.error(e);
@@ -247,4 +251,4 @@ function autoPhrase() {
 }
 autoPhrase();
 
-server.listen(PORT, () => console.log('lumen-oversight listening on http://localhost:' + PORT));
+server.listen(PORT, HOST, () => console.log(`lumen-oversight listening on http://${HOST}:${PORT} (data dir: ${paths.DATA}${paths.ephemeral ? ', instance-local' : ', in tree'})`));

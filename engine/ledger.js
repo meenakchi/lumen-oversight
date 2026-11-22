@@ -5,8 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const STATE = path.join(__dirname, '..', 'state');
-const FILE = path.join(STATE, 'ledger.json');
+const paths = require('./paths');
 
 const DAY = 'Sunday 15 November 2026';
 const CLOCK = '06:45 SGT';
@@ -17,14 +16,10 @@ function nowISO() {
 }
 
 function load() {
-  if (!fs.existsSync(FILE)) return blank();
-  try {
-    const s = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    seq = (s.counter || 0) + 1;
-    return s;
-  } catch (e) {
-    return blank();
-  }
+  const s = paths.read('ledger.json');
+  if (!s) return blank();
+  seq = (s.counter || 0) + 1;
+  return s;
 }
 
 function blank() {
@@ -33,9 +28,10 @@ function blank() {
 
 let state = null;
 function persist() {
-  if (!fs.existsSync(STATE)) fs.mkdirSync(STATE, { recursive: true });
   state.counter = seq;
-  fs.writeFileSync(FILE, JSON.stringify(state, null, 1));
+  // A read-only host keeps the ledger for the instance only. Serving an audit trail must
+  // never depend on persistence succeeding, so a failed write is a return value, not a throw.
+  return paths.write('ledger.json', state);
 }
 
 function init() {

@@ -11,7 +11,10 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const WATCH = ['rules/policy.json', 'rules/taxonomy.json', 'rules/scenarios.json', 'rules/ground_truth_labels.json'];
-const FILE = path.join(ROOT, 'state', 'integrity.json');
+const paths = require('./paths');
+// The anchor is read from the committed tree on purpose: an instance that cannot write to its own
+// app tree also cannot quietly re-baseline it, so drift stays a git-visible event.
+const FILE = paths.treeFile('integrity.json');
 
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
@@ -69,14 +72,12 @@ function record(who) {
     note: 'Baseline for the kit files this oversight layer enforces. If a hash changes, the Rules tab goes red and every new ledger row carries the new short hash, so a rule edit can never masquerade as history. This is drift detection against a recorded anchor, not a cryptographic guarantee: anyone with write access to this disk could re-record. The anchor that is hard to quietly change is the one published in the git commit \u2014 state/integrity.json is committed, so the diff is the tamper alarm.',
   };
   if (!prev) b.hashes = current();
-  fs.mkdirSync(path.dirname(FILE), { recursive: true });
-  fs.writeFileSync(FILE, JSON.stringify(b, null, 1));
+  paths.write('integrity.json', b);
   return { ...report(), recorded: true };
 }
 
 // Append-only chain: a tampered ledger row breaks the chain from that row on.
-const CHAIN_FILE = path.join(ROOT, 'state', 'integrity-chain.json');
-function chain() { try { return JSON.parse(fs.readFileSync(CHAIN_FILE, 'utf8')); } catch (e) { return null; } }
+function chain() { return paths.read('integrity-chain.json'); }
 
 function chainBuild() {
   const ledger = require('./ledger');
@@ -89,7 +90,7 @@ function chainBuild() {
     return row;
   });
   const out = { head: prev, built_at: new Date().toISOString(), count: rows.length, rows, policy_sha: policyTag() };
-  fs.writeFileSync(CHAIN_FILE, JSON.stringify(out, null, 1));
+  paths.write('integrity-chain.json', out);
   return out;
 }
 

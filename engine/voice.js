@@ -13,7 +13,8 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 
-const STATE = path.join(__dirname, '..', 'state', 'voice.json');
+const paths = require('./paths');
+const STATE = paths.dataFile('voice.json');
 const CRED = process.env.OVERSIGHT_CRED_FILE || '/var/lib/qwenwork/cred';
 // On a QwenWork host the sandbox injects the MaaS origin and rotates a credential
 // file. Anywhere else (Render, a laptop, CI) there is neither, so a user-supplied
@@ -21,7 +22,7 @@ const CRED = process.env.OVERSIGHT_CRED_FILE || '/var/lib/qwenwork/cred';
 // printed in the UI, because "which credential answered" is itself an audit fact.
 const BASE = (process.env.OVERSIGHT_LLM_BASE_URL || process.env.QW_API_BASE_URL || (process.env.OVERSIGHT_LLM_API_KEY ? 'https://api1.qwenwork.ai' : '')).replace(/\/$/, '');
 const MODEL = process.env.OVERSIGHT_LLM_MODEL || process.env.OVERSIGHT_MODEL || 'qwen3.8-flash';
-const RECORD = path.join(__dirname, '..', 'state', 'wording-record.json');
+const RECORD = paths.treeFile('wording-record.json');
 
 // The sandbox rotates the MaaS access token into the cred file; environment keys
 // go stale mid-session. Read it fresh on every call so a long-running process
@@ -374,7 +375,7 @@ function guard(fact, draft) {
 
 // -------------------------------------------------------- cache / store ----
 function load() {
-  try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch (e) { return null; }
+  return paths.read('voice.json');
 }
 
 /* The recorded exhibit: what the model actually wrote during the build session, with
@@ -382,7 +383,7 @@ function load() {
    key should still be able to show what this feature does, but must not imply it ran
    the model just now. */
 function readRecord() {
-  try { return JSON.parse(fs.readFileSync(RECORD, 'utf8')); } catch (e) { return null; }
+  return paths.read('wording-record.json');
 }
 
 function writeRecord(v, brief) {
@@ -392,18 +393,18 @@ function writeRecord(v, brief) {
       return { id, headline: p.headline, why: p.why, recommend: p.recommend, figures_checked: p.guard.numbers_found, model: p.model };
     });
     if (!phrases.length) return;
-    fs.writeFileSync(RECORD, JSON.stringify({
+    paths.write('wording-record.json', {
       recorded_at: v.created, model: v.model, calls: v.calls, tokens: v.tokens,
       rejected: (v.rejections || []).length, rejections: (v.rejections || []).map((r) => ({ id: r.id, reason: r.reason, excerpt: r.offending_excerpt })),
       money_protected: (((brief || {}).counts) || {}).protected || null,
       host: { endpoint: BASE ? BASE.replace(/^https:\/\//, '').replace(/\/v1$/, '') : null, model: v.model, credential: keySource() },
       note: 'A record of one real generation, kept so the feature can be shown on a host with no key. It describes what happened where it was recorded; it says nothing about the machine reading it now.',
       phrases,
-    }, null, 1));
+    });
   } catch (e) { /* the record is an exhibit, never a dependency */ }
 }
 function save(v) {
-  try { fs.mkdirSync(path.dirname(STATE), { recursive: true }); fs.writeFileSync(STATE, JSON.stringify(v, null, 1)); } catch (e) { /* state is disposable */ }
+  paths.write('voice.json', v); // disposable cache: a read-only host simply re-phrases
 }
 
 function hashOf(items) {
@@ -636,10 +637,10 @@ async function adversarial(fact, mode) {
 
 /* Cumulative tally. The run log is a rolling window, so without this the
    evidence would quietly forget the interesting failures. */
-const TALLY = path.join(__dirname, '..', 'state', 'guard-tally.json');
+const TALLY = paths.dataFile('guard-tally.json');
 function tally(run) {
   let t = { runs: 0, caught: 0, by_reason: {}, invented_figures: [], breach_claims: 0, since: null, last_run: null };
-  try { t = Object.assign(t, JSON.parse(fs.readFileSync(TALLY, 'utf8'))); } catch (e) { /* first run */ }
+  t = Object.assign(t, paths.read('guard-tally.json') || {});
   // canonicalise a tally written before figures were normalised, so the same value
   // never appears twice in the headline list (12 and 12%)
   if (Array.isArray(t.invented_figures)) {
@@ -668,7 +669,7 @@ function tally(run) {
     }
     t.since = t.since || run.ran_at;
     t.last_run = run.ran_at;
-    try { fs.mkdirSync(path.dirname(TALLY), { recursive: true }); fs.writeFileSync(TALLY, JSON.stringify(t, null, 1)); } catch (e) { /* disposable */ }
+    paths.write('guard-tally.json', t); // disposable: the accumulator resets with the instance
   }
   return t;
 }
@@ -737,7 +738,7 @@ function hasFreshCache() {
 }
 
 function calibrationOfLast() {
-  try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'state', 'calibration.json'), 'utf8')); } catch (e) { return null; }
+  return paths.read('calibration.json');
 }
 
 module.exports = { refresh, apply, status, tally, calibration, calibrationOfLast, hasFreshCache, readRecord, guard, factsFor, enabled, MODEL, adversarial };

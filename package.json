@@ -1,7 +1,7 @@
 {
   "name": "lumen-oversight",
   "version": "1.0.0",
-  "description": "Agents Watching Agents \u2014 an oversight agent for a one-person company. Track 2 submission for the QwenWork x Hashmeta AI One-Person Company Hackathon, built on AvePoint's starter kit.",
+  "description": "Agents Watching Agents \u2014 an oversight agent for a one-person company. Track 2 submission for the QwenWork x Hashmeta AI One-Person Company Hackathon, built on AvePoint's starter kit. Runs read-only: state goes to XDG_DATA_HOME when the app tree is not writable (QwenWork Page runtime).",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
