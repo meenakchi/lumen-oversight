@@ -98,13 +98,22 @@ The lesson is the one the whole product is built on: check both directions. A gu
 decorative; a guard that rejects true sentences is noise the owner stops reading, and then the first real leak
 claim arrives to an empty room.
 
-## Why the generated film never animates the interface
+## How the 60-second film is built, and why it never animates the interface
 
 `../output/morning-brief-60s.mp4` is the track's "one piece of generated content (the 60-second
-briefing video)". Of its 60.0 seconds, 36.5 are screenshots of the deployed app moved with a
-geometric camera (never re-drawn), 19.5 are locally rendered cards, and 4.0 are a generated
-dawn-desk take used as the opening breath; the same model session also supplies the low audio
-bed. Nothing generated is allowed to carry a claim.
+briefing video)". It is the briefing: **53.7 s of its 60.0 s are the app's own sentences, one per
+card, rendered from `GET /api/brief` and `GET /api/guard/record` on the running deployment** (then
+2.8 s of the evidence drawer immediately after the sentence it proves, and 3.5 s of generated
+dawn-desk atmosphere, which also supplies the audio bed). Nothing generated carries a claim; the
+words on screen are the words the product sends, so the film satisfies the guide's own test for
+this deliverable — page 49: *"the daily briefing as a 60-second video. Win condition: the owner
+it serves understands every line of it."*
+
+The sentences are the recorded generation's, i.e. written by `qwen3.8-flash` on a host with a key,
+and the film says that out loud on the second-to-last card, along with the running tally (53 of 59
+deliberate attempts to invent a figure refused) and the fact that the public demo host has no key
+and therefore publishes the rule engine's wording. Nothing is typed by hand: `make_brief_cards.py`
+reads the API and renders, so if a number on screen is wrong it is wrong because the app said it.
 
 That budget was a decision, not an accident. No rule asks for cinematic shots: the starter guide
 (page 6) defines a strong demo as a badly-behaved agent caught, **one made-up number flagged with
@@ -132,13 +141,14 @@ pixels), and every figure on screen was read from `GET /api/brief`, `/api/integr
 `/api/scenarios` at build time by `../stills/make_cards.py`.
 
 Reproduce: `python3 make_cards.py` (pulls the live numbers, writes four 1280x720 cards),
-then `python3 assemble.py` (prints the 12-shot cut list — 36.5 s of screenshots, 19.5 s of cards,
-4.0 s of generated footage — and encodes exactly 60.0 s).
+then `python3 assemble.py` (prints the 14-shot cut list — 53.7 s of briefing cards, 2.8 s of
+screenshots, 3.5 s of generated footage — refuses to encode unless the total is 60.0 s, and
+produces the file).
 
 Provenance for the generated material, so the claim is checkable rather than asserted:
 
 ```
-film        morning-brief-60s.mp4        sha256 ec7938c183f34c9c…
+film        morning-brief-60s.mp4        sha256 4c327720d834213b…
 footage     clipD.mp4  task 01a20312-8c92-7531-a4db-2ad87ce7ed56  (text-to-video, 30 s, 720p)
 audio bed   clipC.mp4  task 01a20312-8bc2-7042-a934-35acd6164c01  (cut from picture, kept as sound)
 rejected    clipA.mp4  task 01a20307-37c4-72a1-adb2-48a852578579  (paper with printed type)

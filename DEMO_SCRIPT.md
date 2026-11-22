@@ -56,9 +56,11 @@ Read in Mei's voice, over screen recordings of the brief → evidence drawer →
       captured from the running app and encoded inside a QwenWork session; scripted voiceover is
       optional because every beat is captioned (`output/morning-brief-walkthrough.webm`).
 - [x] **One piece of generated content: the 60-second briefing film**
-      (`output/morning-brief-60s.mp4`, exactly 60.0 s) — 36.5 s of real screens under a camera
-      move, 19.5 s of rendered fact cards, 4.0 s of Seedance 2.5 atmosphere plus its audio bed.
-      No generated frame carries a number or a hash; why is recorded in `README.md`.
+      (`output/morning-brief-60s.mp4`, exactly 60.0 s) — the briefing itself, one of the app's own
+      sentences per card for 53.7 s, read from `/api/brief` and the recorded generation on the live
+      deployment; 2.8 s of the evidence drawer behind the sentence it proves; 3.5 s of Seedance 2.5
+      atmosphere that also supplies the audio bed. It names its own provenance on screen (model,
+      date, what the guard refused, and that the public host is keyless). Cut list in `../stills/`.
 - [x] **Website built with Hashmeta AI** — https://morning-brief.geo.hashmeta.tech/
       Its four caught-item verdicts now agree with the running app (SGD 700 blocked; SGD 720,
       SGD 8,040 and SGD 1,200 held), and the invented rule ids and example hash that an earlier

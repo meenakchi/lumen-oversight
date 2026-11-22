@@ -78,6 +78,7 @@ function open() {
     fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
     const handle = new DatabaseSync(DB_FILE);
     handle.exec('PRAGMA journal_mode = WAL;');
+    handle.exec('PRAGMA busy_timeout = 2000;');
     // The row id is what the upsert keys on. A table left by an earlier build keyed on the wrong
     // column, which makes every ON CONFLICT fail, so rebuild those two derived tables instead of
     // writing nothing and reporting success: the ledger JSON and the hash chain are the record.
@@ -102,6 +103,19 @@ const available = () => open();
 
 /** Store every row, and delete ids that are no longer in the trail (which happens only when
  *  the night is replayed, and the UI reports that reset separately). */
+function sleepSync(ms) {
+  const sab = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(sab, 0, 0, ms);   // block without spinning; this runs on a 2-core host
+}
+
+/** SQLite allows one writer at a time and this host can legitimately have two processes: the
+ *  server, and the nightly replay a schedule fires while a visitor is clicking. A test suite
+ *  left running in the same tree makes three. So the second writer waits briefly for the lock
+ *  instead of reporting a mirror failure that was never a failure. `busy_timeout` is set at
+ *  open(); this loop is the outer bound, and it gives up honestly rather than hanging. */
+const WRITE_TRIES = 6;
+const WRITE_WAIT_MS = 150;
+
 function syncAll(state) {
   if (!open()) return false;
   const entries = state.entries || [];
@@ -116,6 +130,8 @@ function syncAll(state) {
       policy_sha=excluded.policy_sha, stake_total=excluded.stake_total, rules=excluded.rules, flags=excluded.flags,
       sim=excluded.sim, row=excluded.row`);
   const ids = new Set(entries.map((e) => e.id));
+  let lastErr = null;
+  for (let attempt = 1; attempt <= WRITE_TRIES; attempt++) {
   db.exec('BEGIN');
   try {
     const qids = new Set(queue.map((q) => q.id));
@@ -138,10 +154,15 @@ function syncAll(state) {
     db.exec('COMMIT');
     return true;
   } catch (e) {
-    db.exec('ROLLBACK');
-    status.reason = 'write failed: ' + String((e && e.message) || e);
-    return false;
+    lastErr = e;
+    try { db.exec('ROLLBACK'); } catch (e2) { /* already unwound */ }
+    if (!/LOCKED|BUSY/i.test(String(e.message || e))) break;
+    sleepSync(WRITE_WAIT_MS * attempt);
   }
+  }
+  status.reason = 'write failed after ' + WRITE_TRIES + ' tries: ' + String((lastErr && lastErr.message) || lastErr);
+  console.error(`[store] database mirror failed: ${status.reason}`);
+  return false;
 }
 
 /** Read the trail back, in stored order. null = nothing there (cold host), so the caller

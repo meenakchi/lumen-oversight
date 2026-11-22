@@ -5,6 +5,14 @@
 const assert = require('assert');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+
+// Give the suite its own data directory before any engine module is loaded: `paths.DATA` is
+// resolved at require time, and without this the tests write into the same state/ files a
+// running instance has open. That race showed up as two failures in the SQLite mirror test that
+// vanished on a rerun — a flaky suite is worse than no suite, because it teaches you to rerun.
+process.env.OVERSIGHT_DATA_DIR = process.env.OVERSIGHT_DATA_DIR
+  || fs.mkdtempSync(path.join(os.tmpdir(), 'lumen-selftest-'));
 
 const { corpus, reload } = require('../engine/corpus');
 const cl = require('../engine/classify');
