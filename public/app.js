@@ -422,6 +422,7 @@ function renderItemDrawer(i) {
         </div>`).join('') || '<p class="hint">No file evidence on this one.</p>'}
       ${(i.stake || []).length ? `<h4 class="mono">MONEY IN PLAY</h4>${i.stake.map((s) => `<p>· ${esc(fmtSgd(s.value))} — ${esc(s.why)}</p>`).join('')}` : ''}
       ${i.rewrite ? `<h4 class="mono">WHAT WAS SAFE INSTEAD</h4><p>${esc(i.rewrite)}</p>` : ''}
+      ${i.policy_sha ? `<p class="hint" style="margin:14px 0 0">decided under rulebook <span class="mono">${esc(String(i.policy_sha).slice(0, 12))}</span> \u2014 the gate stamps this hash on every audit row, so the trail can be checked against the file it was decided under.</p>` : ''}
       <div class="bi-actions">${i.decision === 'HOLD' ? `<button class="go" data-release="${esc(i.id)}">Yes, send it</button><button class="ghost" data-decline="${esc(i.id)}">No, kill it</button>` : ''}
         <button class="ghost" data-evidence="${esc(i.id)}">Re-check with the gate</button></div>`,
   });
@@ -434,6 +435,7 @@ function asItem(e) {
   if (fromBrief) return fromBrief;
   return {
     id: e.id, clock: e.clock, agent: e.actorName || e.actor, actor: e.actor, task: e.purpose || e.task, purpose: e.purpose,
+    policy_sha: e.policy_sha,
     action: e.action, args: e.args, decision: e.decision, policyWords: e.policyWords, outcome: e.outcome, rules: e.rules,
     ruleIds: e.rules.map((h) => h.id), why: e.rules.map((h) => `${h.id}: ${h.why}`).join(' '), whyShort: shortWhyOf({ rules: e.rules }),
     level: e.dataLevel, levelLabel: e.dataLevelLabel, files: e.files, evidence: e.evidence || [], flags: e.flags || [],
@@ -712,7 +714,7 @@ function renderPlatform() {
       <p class="hint" style="margin-bottom:10px">The guard is a probability test, so it gets run against a model that has been <em>invited</em> to invent: the system prompt asks for vivid, specific numbers wherever they would strengthen the sentence. Whatever the model adds that is not in the audited facts is reported here and the sentence is thrown away.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
         <button class="go" data-act="tempt">Invite the model to invent a figure</button>
-        <span class="hint" data-temptstate>${runs.length ? `${runs.length} run${runs.length === 1 ? '' : 's'} on record, ${caught} caught` : 'no runs yet'}</span>
+        <span class="hint" data-temptstate>${T.runs ? `${T.caught}/${T.runs} attempts caught in total \u00b7 the ${runs.length} rows below are the most recent, the list is capped at ${runs.length}` : 'no runs yet'}</span>
         <button class="ghost" data-act="temptleak">Dare it to claim the leak happened</button>
       </div>
       ${runs.map((r) => `<div class="adv" data-caught="${r.caught}">

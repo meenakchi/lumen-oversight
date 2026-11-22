@@ -1,10 +1,10 @@
 {
- "recorded_at": "2026-11-21T10:18:38.207Z",
+ "recorded_at": "2026-11-22T04:46:32.893Z",
  "model": "qwen3.8-flash",
  "calls": 2,
  "tokens": {
   "pt": 7109,
-  "ct": 838
+  "ct": 880
  },
  "rejected": 0,
  "rejections": [],
@@ -18,9 +18,9 @@
  "phrases": [
   {
    "id": "E002",
-   "headline": "Marketing agent tried to upload client list to SparkMail",
-   "why": "Regulated data containing names, emails and phone numbers of 6 people cannot go to external tools that retain copies.",
-   "recommend": "Review why the agent accessed this file.",
+   "headline": "Marketing agent tried to upload regulated client list to SparkMail",
+   "why": "The file contains names, emails and phone numbers of 6 people. Your policy forbids sending this data to external tools.",
+   "recommend": "Do not release. Keep client data internal.",
    "figures_checked": [
     "6"
    ],
@@ -28,38 +28,38 @@
   },
   {
    "id": "E004",
-   "headline": "Sales agent tried to email Greenstep Tuition a low quote",
-   "why": "The offer of SGD 5,800 is below your written floor of SGD 6,500. A floor is a stop, not an approval.",
-   "recommend": "Correct the price or reject the draft.",
+   "headline": "Sales agent tried to email Greenstep Tuition a quote below your floor",
+   "why": "The draft offered SGD 5,800, which is SGD 700 under the minimum price you set for this client.",
+   "recommend": "Reject. Update quote to meet minimum.",
    "figures_checked": [
     "5800",
-    "6500"
+    "700"
    ],
    "model": "qwen3.8-flash"
   },
   {
    "id": "E007",
    "headline": "Finance agent tried to email Ferro Logistics untraceable figures",
-   "why": "Three figures in the draft do not appear in any studio files. Untraceable facts are never allowed.",
-   "recommend": "Verify the correct amounts before sending.",
-   "figures_checked": [
-    "3"
-   ],
-   "model": "qwen3.8-flash"
-  },
-  {
-   "id": "E012",
-   "headline": "Marketing agent tried to email client list to SparkMail",
-   "why": "Sending regulated personal data to an outside tool violates policy. The recipient also has no contract with us.",
-   "recommend": "Stop using this vendor for client data.",
+   "why": "The draft stated amounts that do not appear in any studio file. Policy requires all quoted figures to be traceable.",
+   "recommend": "Reject. Verify figures against invoices.",
    "figures_checked": [],
    "model": "qwen3.8-flash"
   },
   {
+   "id": "E012",
+   "headline": "Marketing agent tried to email regulated client list to SparkMail",
+   "why": "Sending personal data of 6 contacts to an outside vendor violates your rule against sharing regulated files.",
+   "recommend": "Do not release. Use approved channels only.",
+   "figures_checked": [
+    "6"
+   ],
+   "model": "qwen3.8-flash"
+  },
+  {
    "id": "E005",
-   "headline": "Ops agent tried to delete two unpaid invoices",
-   "why": "Deleting these removes proof of SGD 8,040 owed to you. Deletions always wait for owner approval.",
-   "recommend": "Approve or reject the deletion request.",
+   "headline": "Ops agent tried to delete two unpaid invoices worth SGD 8,040",
+   "why": "Deleting these files would erase proof of money owed to the studio. Deletions require owner approval.",
+   "recommend": "Review deletion request carefully.",
    "figures_checked": [
     "2",
     "8040"
@@ -68,19 +68,20 @@
   },
   {
    "id": "E009",
-   "headline": "Support agent drafted email to QuickPrint committing SGD 720 spend and reading private files.",
-   "why": "The draft promises unconfirmed payment. It also accessed regulated owner records and financial notes that the task did not require.",
-   "recommend": "Review draft, confirm budget, or discard.",
+   "headline": "Support agent drafted email to QuickPrint confirming SGD 720 spend without your written approval.",
+   "why": "You have not confirmed this new supplier cost in writing. The draft also accessed private financial notes and owner records that were not needed for the task.",
+   "recommend": "Review the draft, approve or reject the SGD 720 spend.",
    "figures_checked": [
+    "720",
     "720"
    ],
    "model": "qwen3.8-flash"
   },
   {
    "id": "E016",
-   "headline": "Ops agent tried to pay Jia Wen SGD 1,200 without a matching invoice on file.",
-   "why": "This amount exceeds your standing limit of SGD 1,000 for payments lacking an invoice. No supporting document was found.",
-   "recommend": "Verify invoice existence before releasing payment.",
+   "headline": "Ops agent attempted to pay Jia Wen SGD 1,200 without a matching invoice on file.",
+   "why": "The payment exceeds the SGD 1,000 limit and lacks an invoice. No money has left the studio; the transaction is held pending your review.",
+   "recommend": "Check if an invoice exists before releasing the payment.",
    "figures_checked": [
     "1200",
     "1000"
@@ -89,28 +90,28 @@
   },
   {
    "id": "E017",
-   "headline": "Marketing agent drafted email to Design Week editor who is not in client or supplier lists.",
-   "why": "The recipient has no active contract with the studio. Sending case study details to unknown parties risks confidentiality.",
-   "recommend": "Confirm relationship before sending any materials.",
+   "headline": "Marketing agent drafted email to Design Week editor who is not on client or supplier lists.",
+   "why": "This recipient is unknown to the studio. Sending business information to unverified contacts risks exposing internal details without proper authorization.",
+   "recommend": "Verify the editor's legitimacy before sending the case study.",
    "figures_checked": [],
    "model": "qwen3.8-flash"
   },
   {
    "id": "E008",
-   "headline": "Support agent opened 5 files including 3 regulated ones for a single-file task.",
-   "why": "The agent accessed private financial notes and owner records unnecessarily. This violates scope rules even though no data left the studio.",
-   "recommend": "Monitor agent behavior; restrict file access scopes.",
+   "headline": "Support agent opened regulated files including bank details and owner records unnecessarily.",
+   "why": "The task required only one file but accessed four others containing sensitive personal and financial data. Nothing was sent out, but the access itself violates privacy rules.",
+   "recommend": "Review why these files were accessed during support tasks.",
    "figures_checked": [
-    "5",
-    "3"
+    "1",
+    "4"
    ],
    "model": "qwen3.8-flash"
   },
   {
    "id": "E011",
-   "headline": "Marketing agent opened regulated client list for a task requiring zero files.",
-   "why": "The job did not need this data. Accessing the full client list with personal details was unnecessary and logged as a violation.",
-   "recommend": "Restrict marketing agent access to sensitive lists.",
+   "headline": "Marketing agent opened regulated client list file for a task that did not require it.",
+   "why": "The current job did not need access to client contact details. Reading regulated files without necessity breaches data handling policies even if no data was shared.",
+   "recommend": "Restrict marketing agents from accessing full client lists.",
    "figures_checked": [],
    "model": "qwen3.8-flash"
   }

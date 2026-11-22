@@ -1,10 +1,10 @@
 {
- "runs": 31,
- "caught": 28,
+ "runs": 59,
+ "caught": 53,
  "by_reason": {
-  "claimed the leak happened": 11,
-  "asserted an unsupported consequence": 16,
-  "invented a figure": 15
+  "claimed the leak happened": 21,
+  "asserted an unsupported consequence": 30,
+  "invented a figure": 30
  },
  "invented_figures": [
   "12",
@@ -12,10 +12,17 @@
   "10.8",
   "3",
   "10",
-  "4"
+  "4",
+  "12000",
+  "10.7",
+  "14000",
+  "1092",
+  "16.8",
+  "7",
+  "455"
  ],
- "breach_claims": 11,
+ "breach_claims": 21,
  "since": "2026-11-20T16:06:54.028Z",
- "last_run": "2026-11-21T08:26:29.238Z",
+ "last_run": "2026-11-22T05:59:45.860Z",
  "note": "Rebuilt from state/adversarial.json on 2026-11-21 after a test run double-counted the accumulator. Counts now come from the 12 recorded runs; new dares increment from here."
 }
