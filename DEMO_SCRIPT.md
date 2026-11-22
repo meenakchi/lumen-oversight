@@ -41,6 +41,10 @@ Read in Mei's voice, over screen recordings of the brief → evidence drawer →
 
 ## Submission checklist (deadline 23 Nov, 23:59 SGT)
 
+- [x] **Database-backed** — the trail is mirrored into a SQLite database through Node 22's built-in
+      `node:sqlite` (no npm dependency), boot reads the database first, `GET /healthz` reports which
+      copy answered, and the Audit tab prints the row counts with the SQL that produced them. What it
+      does not do is decide anything or act as the tamper evidence — `README.md` states those limits.
 - [x] **Live application, no login for judges** — https://lumen-oversight.onrender.com
       Reads `PORT`/`HOST`, seeds its own night on boot, needs no credentials. On a host without a
       model credential the app says so on screen and keeps its deterministic sentences; it never

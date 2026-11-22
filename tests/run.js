@@ -262,5 +262,46 @@ t('the live-gate ledger is capped, never pruned', () => {
   assert.strictEqual(r.entries, r.base + 40, 'a refusal must not add a row, and nothing pre-existing may vanish');
 });
 
+t('the audit trail is mirrored into SQLite and reads back identical', () => {
+  const store = require('../engine/store');
+  const st = ledger.getState();
+  const stats = store.stats();
+  if (!stats.ok) {
+    // a host without node:sqlite must still work; that is the fallback, not a failure
+    console.log(`     (node:sqlite unavailable here \u2014 ${String(stats.reason).slice(0, 60)} \u2014 JSON snapshot in use)`);
+    return;
+  }
+  assert.strictEqual(stats.rows, st.entries.length, `database has ${stats.rows} rows, ledger holds ${st.entries.length}`);
+  const back = store.readAll();
+  assert.ok(back, 'readAll returned nothing while rows exist');
+  assert.strictEqual(JSON.stringify(back.entries), JSON.stringify(st.entries), 'rows read from SQLite are not identical to the trail');
+  assert.strictEqual(JSON.stringify(back.queue), JSON.stringify(st.queue), 'the owner queue did not survive the round trip');
+  const money = (stats.queries.find((q) => q.label === 'money that did not move') || {}).rows || [];
+  const byApp = st.entries.filter((e) => e.decision !== 'ALLOW')
+    .reduce((a, e) => a + (e.stake || []).reduce((x, y) => x + (Number(y.value) || 0), 0), 0);
+  assert.strictEqual(Number(money[0] ? money[0].sgd : 0), byApp, 'SQL and the app disagree about the money');
+  const hashes = (stats.queries.find((q) => q.label === 'one rulebook hash across the trail') || {}).rows || [];
+  assert.ok(Number(hashes[0] && hashes[0].hashes) >= 1, 'every row should carry the hash it was decided under');
+});
+t('switching the database off changes nothing else', () => {
+  const os = require('os');
+  const tmp = os.tmpdir() + '/storeoff-' + Date.now();
+  require('fs').mkdirSync(tmp, { recursive: true });
+  const script = "const st=require('./engine/store');const l=require('./engine/ledger');l.init();"
+    + "require('./engine/seed').seedNight();const p=l.persist();"
+    + "console.log(JSON.stringify({status:st.status(),entries:l.entries().length,queue:l.queue().length,persist:p}));";
+  const out = require('child_process').execFileSync('node', ['-e', script], {
+    cwd: path.join(__dirname, '..'), encoding: 'utf8',
+    env: Object.assign({}, process.env, { OVERSIGHT_STORE_OFF: '1', OVERSIGHT_DATA_DIR: tmp }),
+  });
+  require('fs').rmSync(tmp, { recursive: true, force: true });
+  const r = JSON.parse(out.trim().split('\n').filter((x) => x.startsWith('{')).pop());
+  assert.strictEqual(r.status.ok, false, 'OVERSIGHT_STORE_OFF=1 still opened a database');
+  assert.strictEqual(r.status.driver, 'disabled');
+  assert.ok(r.entries > 0, 'with no database the trail should still be served from the snapshot');
+  assert.strictEqual(r.persist.db, false, 'persist should report the database as not written');
+  assert.strictEqual(r.persist.json, true, 'the JSON snapshot must still be written');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -87,7 +87,11 @@ async function api(req, res, url) {
   if (p === '/health') return send(res, 200, { ok: true, studio: 'Lumen Studio', files: c.files.length, entries: ledger.entries().length });
   // /healthz is the platform health check: it answers before anything else, needs no
   // credential, no write and no authentication, and reports whether the data dir is real.
-  if (p === '/healthz') return send(res, 200, { ok: true, entries: ledger.entries().length, data_dir_writable: paths.writable(), ephemeral_data: paths.ephemeral });
+  if (p === '/healthz') return send(res, 200, {
+    ok: true, entries: ledger.entries().length,
+    data_dir_writable: paths.writable(), ephemeral_data: paths.ephemeral,
+    trail_read_from: ledger.where().boot_source, store: ledger.where().store.driver,
+  });
 
   // ---- reads ----------------------------------------------------------
   if (req.method === 'GET') {
@@ -106,6 +110,21 @@ async function api(req, res, url) {
     if (p === '/api/log') return send(res, 200, { entries: ledger.entries().slice().reverse(), queue: ledger.queue() });
     if (p === '/api/files') return send(res, 200, { index: fileIndex, workers: AGENTS });
     if (p === '/api/scenarios') return send(res, 200, { board: getBoard(true), canary: scenarios.canary(), scripts: scenarios.buildScenarios() });
+    if (p === '/api/store') {
+      const store = require('./engine/store');
+      return send(res, 200, {
+        store: store.stats(),
+        trail: ledger.where(),
+        snapshot: { entries: ledger.entries().length, queue: ledger.queue().length },
+        note: 'The audit rows live in a SQLite database (node:sqlite, no npm dependency), with the '
+          + 'decision, rule ids, data level, money and rulebook hash stored as columns so the questions '
+          + 'below can be answered in SQL. The database stores the trail; it decides nothing: every '
+          + 'verdict comes from rules/policy.json through engine/gate.js. A database anyone can rewrite '
+          + 'is not evidence either, so the answer to "was this trail altered" is the hash chain in '
+          + '/api/integrity, not this table.',
+      });
+    }
+
     if (p === '/api/integrity') {
       const { report, chainVerify, policyTag } = require('./engine/integrity');
       const { LIMITS } = require('./engine/rules');
@@ -288,6 +307,9 @@ const server = http.createServer(async (req, res) => {
 
 ledger.init();
 if (!ledger.entries().length) seedNight();
+// Mirror the trail into the database at boot, not only on the first write: a freshly started
+// instance must never report an empty table while serving rows from the JSON snapshot.
+try { ledger.persist(); } catch (e) { console.log('[store] boot mirror failed:', String(e.message || e).slice(0, 90)); }
 getBoard();
 // build the audit chain after the night is seeded, so the chain always covers every row
 try { require('./engine/integrity').chainBuild(); }

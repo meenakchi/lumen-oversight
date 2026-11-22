@@ -30,6 +30,7 @@ whole night from scratch — the seed is deterministic.
 | The five scripted rogue runs + five we wrote | run through the same gate as any action (`sim` flag in the trail) |
 | Sunday-night times, the five worker agents, some of the emails | authored fiction, so the demo is a day, not a table |
 | Nothing sends email, uploads, deletes or pays | by design: this layer only decides |
+| The SQLite audit database | real: `node:sqlite`, no npm dependency, mirrored on every write and read back byte-identically by the test suite. It stores and answers questions about the trail; it decides nothing and proves nothing on its own |
 
 ## Layout
 
@@ -41,6 +42,8 @@ engine/classify.js   content-first sensitivity labels, with the line each label 
 engine/rules.js      the policy table + owner-facing sentence fragments (one shared voice)
 engine/gate.js       ALLOW / HOLD_FOR_APPROVAL / BLOCK + evidence + money at stake + rewrite
 engine/scenarios.js  replays, grading (decision · rule · evidence), the self-check canary
+engine/paths.js      where the app may write (the Page runtime strips the app tree's write bits)
+engine/store.js      SQLite mirror of the trail (node:sqlite, zero dependencies) + its fixed queries
 engine/day.js        the night the workers ran; day.js also holds our extra scenarios
 engine/ledger.js     append-only log + approval queue, persisted
 engine/briefing.js   the morning brief, derived from the log — the product's output
@@ -194,6 +197,42 @@ honest next step rather than claimed here.
    at the file that really contains patient data and asks whether it read anything it should not
    have. If that probe comes back clean when it shouldn't, the oversight layer breaking silently
    becomes the loudest alarm in the product.
+
+## Database-backed: what that claim does and does not cover
+
+The submission spec asks for a live, **database-backed** application, so the trail is not just a
+JSON file. `engine/store.js` opens a SQLite database through Node 22's built-in `node:sqlite` -
+no npm package, no sidecar service, no connection string to leak - into the platform-writable
+data directory, and mirrors every write into it:
+
+* `audit(id, seq, at, day, actor, action, decision, data_level, policy_sha, stake_total, rules,
+  flags, sim, row)` - the questions people ask a trail, as columns, with the full row kept as
+  JSON beside them so nothing is lost in the mapping;
+* `queue(id, seq, decision, release_path, actor, row)` - the owner's held items, so a restart
+  does not lose what is waiting for a tap;
+* `meta` - the sequence counter and the night it belongs to.
+
+Boot order is database first, then the JSON snapshot, then a fresh seed - `GET /healthz` reports
+which one answered as `trail_read_from`, because "it depends which copy is authoritative" is not
+the kind of thing an audit tool should leave a reader to guess. `GET /api/store` returns the row
+counts, the money, the rules most often cited and how many distinct rulebook hashes the trail
+carries, **with the SQL printed next to each answer** - rendered on the Audit tab, so
+"database-backed" is verifiable on screen rather than a word in a README. The queries are fixed
+statements with no user input, for the same reason the model gets no vote: a "run any SQL" box on
+a public host is how you end up explaining a mistake instead of preventing one.
+
+Three limits, stated rather than buried:
+
+1. **The database is not the tamper evidence.** Anyone holding the disk can `UPDATE audit SET
+   decision='ALLOW'`. That is what the hash chain and the committed anchor on the Rules tab are
+   for, and the card says so in the same breath as the row count.
+2. **On the free host the data directory is instance-local**, so the database is a faithful mirror
+   for the life of an instance, not durable storage. On Render the JSON sits on writable disk; the
+   durable copy is the one in git (`state/integrity.json`, `state/wording-record.json`).
+3. **`node:sqlite` is experimental in Node 22 and prints a warning to the host log.** We do not
+   suppress it. If the driver is missing or `OVERSIGHT_STORE_OFF=1`, the app serves the identical
+   trail from JSON and reports `driver: disabled` or the reason - a test asserts that turning the
+   database off changes nothing else, and the CI lane prints the mirror comparison on both paths.
 
 ## Limits of the public demo host, stated rather than hidden
 

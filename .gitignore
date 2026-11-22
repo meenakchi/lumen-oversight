@@ -14,3 +14,8 @@ state/voice.json
 
 # rebuilt at boot from the live ledger (the report it feeds is committed via integrity.json)
 state/integrity-chain.json
+
+# SQLite mirror of the audit trail (regenerated on every write)
+state/audit.db
+state/audit.db-shm
+state/audit.db-wal

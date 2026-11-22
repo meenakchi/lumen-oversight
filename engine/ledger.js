@@ -6,6 +6,13 @@ const fs = require('fs');
 const path = require('path');
 
 const paths = require('./paths');
+const store = require('./store');
+
+// Where the trail was read from on this boot. Reported by /healthz and the store card, because
+// "it depends which copy is authoritative" is the kind of thing an audit tool should not leave
+// the reader to guess: the database is authoritative once it has rows, the JSON file is the
+// portable snapshot, and a cold clone seeds the night from the scenario definitions.
+let bootSource = 'not-loaded';
 
 const DAY = 'Sunday 15 November 2026';
 const CLOCK = '06:45 SGT';
@@ -16,8 +23,20 @@ function nowISO() {
 }
 
 function load() {
+  const fromDb = store.readAll();
+  if (fromDb && Array.isArray(fromDb.entries) && fromDb.entries.length) {
+    bootSource = 'sqlite';
+    seq = (Number(fromDb.counter) || fromDb.entries.length) + 1;
+    return Object.assign(blank(), {
+      entries: fromDb.entries,
+      queue: fromDb.queue || [],
+      counter: Number(fromDb.counter) || fromDb.entries.length,
+      day: fromDb.day || DAY,
+    });
+  }
   const s = paths.read('ledger.json');
-  if (!s) return blank();
+  if (!s) { bootSource = 'seed'; return blank(); }
+  bootSource = 'json';
   seq = (s.counter || 0) + 1;
   return s;
 }
@@ -31,8 +50,13 @@ function persist() {
   state.counter = seq;
   // A read-only host keeps the ledger for the instance only. Serving an audit trail must
   // never depend on persistence succeeding, so a failed write is a return value, not a throw.
-  return paths.write('ledger.json', state);
+  // Both copies are written on every change, so the file and the table cannot drift.
+  const json = paths.write('ledger.json', state);
+  const db = store.syncAll(state);
+  return { json, db, source: bootSource };
 }
+
+const where = () => ({ boot_source: bootSource, store: store.status() });
 
 function init() {
   state = load();
@@ -139,4 +163,4 @@ function reset(keepId) {
   return s;
 }
 
-module.exports = { init, getState, add, findByKey, resolveQueue, queue, entries, reset, persist, DAY, CLOCK };
+module.exports = { init, getState, add, findByKey, resolveQueue, queue, entries, reset, persist, where, DAY, CLOCK };

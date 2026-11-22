@@ -289,6 +289,8 @@ const LOG_FILTERS = [
 async function refreshLog() {
   const { entries, queue } = await api('/api/log');
   STATE.log = entries; STATE.queue = queue;
+  // the store card reports the database as it is, including "there isn't one here"
+  try { STATE.store = await api('/api/store'); } catch (e) { STATE.store = null; }
 }
 
 function logRows() {
@@ -336,6 +338,41 @@ function renderTable() {
   }));
   wireRuleChips();
   $('[data-count="log"]').textContent = rows.length + ' of ' + STATE.log.length + ' entries';
+  renderStore();
+}
+
+/* Where the trail physically lives. Three things this card has to get right: it must not imply
+   the database decides anything, it must not claim the database is what proves the trail was not
+   rewritten (the hash chain on the Rules tab does that), and when there is no database on the
+   host it must say so instead of hiding. */
+function renderStore() {
+  const el = $('#storeSlot');
+  if (!el) return;
+  const d = STATE.store;
+  if (!d || !d.store) { el.innerHTML = ''; return; }
+  const st = d.store;
+  const q = (label) => (st.queries || []).find((x) => x.label === label) || { rows: [] };
+  const first = (label, key) => { const r = q(label).rows; return r && r.length ? Number(r[0][key] || 0) : 0; };
+  const money = first('money that did not move', 'sgd');
+  const hashes = first('one rulebook hash across the trail', 'hashes');
+  const outcomes = q('rows by outcome').rows.map((r) => `${r.decision} ${r.n}`).join(' \u00b7 ');
+  const demoRows = first('live-gate demo rows', 'n');
+  el.innerHTML = `<div class="note-card" style="margin-top:18px;border-color:${st.ok ? 'var(--line)' : 'var(--hold)'}">
+      <h4>Where this trail lives</h4>
+      <p class="hint" style="margin:2px 0 10px">${st.ok
+        ? `All ${st.rows} audit rows are stored in a SQLite database (<code>${esc(st.driver)}</code>, no npm dependency) with the outcome, rule ids, data level, money and rulebook hash as columns. Storing is not deciding: verdicts come from <code>rules/policy.json</code> through the gate. And a database anyone holding the disk can rewrite is not proof \u2014 the answer to “was this trail altered?” is the hash chain on the Rules tab, not this table.`
+        : `There is no database on this host (${esc(st.reason || 'node:sqlite unavailable')}), so the trail is served from the JSON snapshot. Nothing else about the page changes \u2014 the store is a mirror and a query surface, not the decision path.`}</p>
+      <div class="tag-row">
+        <span class="pill">${st.ok ? esc(st.driver) : 'json snapshot'}</span>
+        <span class="pill">${st.rows} rows</span>
+        <span class="pill">${d.snapshot ? d.snapshot.queue : (st.queued == null ? '?' : st.queued)} in the owner's queue</span>
+        ${money ? `<span class="pill">SGD ${money.toLocaleString()} held or stopped</span>` : ''}
+        ${hashes === 1 ? '<span class="pill">one rulebook hash across every row</span>' : (hashes ? `<span class="pill">${hashes} rulebook hashes \u2014 the file changed mid-night</span>` : '')}
+        ${st.bytes ? `<span class="pill">${Math.round(st.bytes / 1024)} KB on disk</span>` : ''}
+      </div>
+      ${outcomes ? `<p class="hint" style="margin-top:8px">${esc(outcomes)}${demoRows ? ` \u00b7 ${demoRows} from the live gate since the last replay` : ''}</p>` : ''}
+      ${st.ok ? `<details class="lastrun" style="margin-top:10px"><summary>the SQL this page ran to get those numbers</summary><pre class="src">${(st.queries || []).map((x) => x.sql + '\n   \u2192 ' + JSON.stringify(x.rows)).join('\n\n')}</pre><p class="hint">Fixed statements, no user input: a "run any query" box on a public host would be the same mistake as letting a model decide.</p></details>` : ''}
+    </div>`;
 }
 
 function wireRuleChips() {

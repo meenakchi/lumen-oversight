@@ -71,6 +71,7 @@ jobs:
 
           curl -fsS -m 40 "http://127.0.0.1:${PORT}/api/integrity" -o /tmp/integrity.json
           curl -fsS -m 40 "http://127.0.0.1:${PORT}/api/voice"     -o /tmp/voice.json
+          curl -fsS -m 40 "http://127.0.0.1:${PORT}/api/store"      -o /tmp/store.json
 
           node -e '
           (async () => {
@@ -80,6 +81,7 @@ jobs:
             const b = doc.brief;
             const ig = read("/tmp/integrity.json");
             const vo = read("/tmp/voice.json");
+            const so = read("/tmp/store.json");
             const v = b.voice || {};
             const nl = String.fromCharCode(10);
             const line = (doc.text || "").split(nl).find((l) => l.startsWith("Wording:"));
@@ -93,6 +95,18 @@ jobs:
             if (!line) fail("no Wording: line in the returned brief text");
             if (v.used > 0 && !/phrased here/.test(line)) fail("voice.used=" + v.used + " but the line hides that a model wrote it");
             if (!v.used && !/no model call on this host/.test(line)) fail("nothing was generated on this host and the line does not admit it");
+
+            // the database mirror: what a judge is told is true, checked against the trail
+            if (!so || !so.store) fail("no /api/store block returned");
+            if (so.store.ok) {
+              if (so.store.rows !== so.snapshot.entries)
+                fail("SQLite holds " + so.store.rows + " rows but the trail has " + so.snapshot.entries);
+              if (so.store.queued !== so.snapshot.queue)
+                fail("SQLite queue rows " + so.store.queued + " vs app queue " + so.snapshot.queue);
+              console.log("store         : sqlite mirror", so.store.rows, "rows /", so.store.queued, "queued");
+            } else {
+              console.log("note: no node:sqlite on this runner; the app served the JSON snapshot and said why:", so.store.reason);
+            }
 
             // total counts the phrasable items, not all ledger rows
             if (v.total !== 10) fail("voice.total should be the 10 phrasable actions, got " + v.total);
@@ -179,6 +193,7 @@ jobs:
           grep -q "Nothing was deleted" /tmp/a4.json || { echo "::error::the refusal does not state that history was kept"; exit 1; }
           echo "live-gate rows capped; refusal states nothing was deleted"
 
+          curl -s "$B/api/store" -o /tmp/a6.json
           curl -s "$B/api/integrity" -o /tmp/a5.json
           node -e '
             const d = JSON.parse(require("fs").readFileSync("/tmp/a5.json", "utf8"));
@@ -186,6 +201,9 @@ jobs:
             if (d.chain.state !== "VERIFIED") fail("chain after a write storm: " + d.chain.state);
             if (d.chain.rows !== d.chain.entries) fail("chain coverage drifted: " + d.chain.rows + " rows vs " + d.chain.entries + " entries");
             if (!d.policy_sha) fail("no rulebook hash reported");
+            const s6 = JSON.parse(require("fs").readFileSync("/tmp/a6.json", "utf8"));
+            if (s6.store.ok && s6.store.rows !== s6.snapshot.entries) fail("database mirror drifted after the write storm: " + s6.store.rows + " vs " + s6.snapshot.entries);
+            if (s6.store.ok) console.log("  mirror after the storm:", s6.store.rows, "rows,", s6.store.queued, "queued,", JSON.stringify(s6.store.queries[4].rows));
             console.log("chain still VERIFIED over", d.chain.rows, "rows, under rulebook", d.policy_sha);
           '
 
