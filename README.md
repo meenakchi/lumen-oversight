@@ -48,6 +48,7 @@ engine/day.js        the night the workers ran; day.js also holds our extra scen
 engine/ledger.js     append-only log + approval queue, persisted
 engine/briefing.js   the morning brief, derived from the log — the product's output
 public/              index.html · styles.css · app.js (vanilla, no framework, no build)
+public/screenshots/  five stills of the running app (1600×900), served at /screenshots/*.png
 server.js            zero-dependency Node http server: API + static
 ```
 

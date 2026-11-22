@@ -61,7 +61,13 @@ Read in Mei's voice, over screen recordings of the brief → evidence drawer →
       deployment; 2.8 s of the evidence drawer behind the sentence it proves; 3.5 s of Seedance 2.5
       atmosphere that also supplies the audio bed. It names its own provenance on screen (model,
       date, what the guard refused, and that the public host is keyless). Cut list in `../stills/`.
+- [x] **Screenshots, served by the app itself** — `https://lumen-oversight.onrender.com/screenshots/`
+      (`brief.png`, `evidence.png`, `integrity.png`, `store.png`, `platform.png`), captured from the
+      deployed URL by `../stills/posters.mjs`, which refuses to save a shot whose claimed text is not
+      actually on screen. Direct URLs, so the page cannot drift from the product.
 - [x] **Website built with Hashmeta AI** — https://morning-brief.geo.hashmeta.tech/
+      Its copy is checked against the running API (`../site-fix/gen.py` regenerates the sections that
+      must match), and five screenshots are embedded from the app's own `/screenshots/` path.
       Its four caught-item verdicts now agree with the running app (SGD 700 blocked; SGD 720,
       SGD 8,040 and SGD 1,200 held), and the invented rule ids and example hash that an earlier
       build printed have been removed. `../site-fix/gen.py` regenerates the correct copy by
